@@ -10,8 +10,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            state::set_bundled_binary_env_vars();
             let app_handle = app.handle().clone();
+            state::set_bundled_binary_env_vars(&app_handle);
             tauri::async_runtime::block_on(async move {
                 let db_path = state::app_data_dir().join("odm.sqlite3");
                 let db = odm_core::Db::open(&db_path).await.expect("failed to open ODM database");

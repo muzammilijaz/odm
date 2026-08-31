@@ -1,5 +1,6 @@
 use odm_core::TaskManager;
 use std::path::PathBuf;
+use tauri::{path::BaseDirectory, AppHandle, Manager};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -24,19 +25,23 @@ pub fn app_data_dir() -> PathBuf {
 }
 
 /// Points odm-engine's ffmpeg/yt-dlp resolution (which checks
-/// `ODM_FFMPEG_PATH`/`ODM_YTDLP_PATH` first) at the bundled binaries in
-/// `src-tauri/binaries/`, so neither needs to be separately installed by the
-/// user. Binary names follow Tauri's sidecar convention
-/// (`<name>-<target-triple>.exe`) so the same files double as the
-/// `externalBin` sources for a packaged installer later.
+/// `ODM_FFMPEG_PATH`/`ODM_YTDLP_PATH` first) at the bundled binaries, so
+/// neither needs to be separately installed by the user. Binary names follow
+/// Tauri's sidecar convention (`<name>-<target-triple>.exe`).
 ///
-/// `CARGO_MANIFEST_DIR` is baked in at compile time and points at
-/// `desktop/src-tauri` on the machine that built this binary — correct for
-/// local dev (`cargo tauri dev`/`cargo run`), but not portable to an
-/// installed build on a different machine. A packaged build should instead
-/// resolve these via Tauri's resource-path API; tracked as follow-up work.
-pub fn set_bundled_binary_env_vars() {
-    let binaries_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries");
+/// In a packaged (installed) build, these live under the app's resource
+/// directory (`$INSTDIR\resources\binaries\` on Windows -- see
+/// `tauri.conf.json`'s `bundle.resources`, which ships `binaries/*` inside
+/// the installer). In dev (`cargo tauri dev`/`cargo run`), that resource
+/// directory doesn't exist yet, so fall back to reading straight out of
+/// `src-tauri/binaries/` via `CARGO_MANIFEST_DIR`.
+pub fn set_bundled_binary_env_vars(app: &AppHandle) {
+    let binaries_dir = app
+        .path()
+        .resolve("binaries", BaseDirectory::Resource)
+        .ok()
+        .filter(|p| p.exists())
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries"));
     const TRIPLE: &str = "x86_64-pc-windows-msvc";
 
     let ffmpeg = binaries_dir.join(format!("ffmpeg-{TRIPLE}.exe"));
