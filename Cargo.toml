@@ -4,4 +4,4 @@ members = ["crates/odm-engine", "crates/odm-core", "crates/odm-native-host", "de
 
 [workspace.package]
 edition = "2021"
-license = "MIT"
+license = "AGPL-3.0-only"

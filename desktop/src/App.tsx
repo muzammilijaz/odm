@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { api } from "./api";
 import { useTaskSpeeds } from "./useTaskSpeeds";
 import type { Category, Task, TaskStatus, TaskWithSpeed } from "./types";
@@ -17,6 +18,73 @@ function formatBytes(bytes: number): string {
 
 function formatSpeed(bytesPerSec: number): string {
   return bytesPerSec > 0 ? `${formatBytes(bytesPerSec)}/s` : "";
+}
+
+function useAppVersion(): string {
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    getVersion()
+      .then(setVersion)
+      .catch(() => {});
+  }, []);
+  return version;
+}
+
+/** Compares dotted-integer versions ("1.2.10" vs "1.3.0"); positive when `a` is newer. */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+const UPDATE_REPO = "muzammilijaz/odm";
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+/** Polls the GitHub Releases API for a newer tag than the running app's
+ * version. Silent on any failure (offline, rate-limited) -- this is a
+ * courtesy notification, not something worth surfacing an error for. A
+ * dismissed version is remembered in localStorage so it doesn't nag again
+ * until an even newer release ships. */
+function useUpdateCheck(currentVersion: string) {
+  const [update, setUpdate] = useState<{ version: string; url: string } | null>(null);
+
+  useEffect(() => {
+    if (!currentVersion) return;
+    let cancelled = false;
+
+    async function check() {
+      try {
+        const res = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const remote = String(data.tag_name || "").replace(/^v/i, "");
+        if (!remote || compareVersions(remote, currentVersion) <= 0) return;
+        if (cancelled) return;
+        if (localStorage.getItem("odm-update-dismissed") === remote) return;
+        setUpdate({ version: remote, url: data.html_url || `https://github.com/${UPDATE_REPO}/releases` });
+      } catch {
+        // offline or rate-limited -- try again next interval
+      }
+    }
+
+    check();
+    const interval = setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [currentVersion]);
+
+  function dismiss() {
+    if (update) localStorage.setItem("odm-update-dismissed", update.version);
+    setUpdate(null);
+  }
+
+  return { update, dismiss };
 }
 
 function formatAdded(iso: string): string {
@@ -670,7 +738,7 @@ function AddDownloadModal({ initialUrl, onClose, onAdded }: { initialUrl?: strin
   );
 }
 
-function AboutModal({ onClose }: { onClose: () => void }) {
+function AboutModal({ onClose, version }: { onClose: () => void; version: string }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal--about" onClick={(e) => e.stopPropagation()}>
@@ -683,8 +751,21 @@ function AboutModal({ onClose }: { onClose: () => void }) {
         <div className="about__body">
           <img src={logo} alt="ODM" className="about__logo" />
           <div className="about__name">ODM — Open Download Manager</div>
-          <div className="muted">Version 0.1.0</div>
+          <div className="muted">{version ? `Version ${version}` : "Version —"}</div>
           <p className="muted about__desc">A fast, modern download manager for Windows — direct links, and video/audio via yt-dlp.</p>
+
+          <div className="about__divider" />
+
+          <div className="about__author">
+            <div className="about__author-name">Muzammil Ijaz</div>
+            <button type="button" className="link-btn" onClick={() => openUrl("https://github.com/muzammilijaz")}>
+              github.com/muzammilijaz
+            </button>
+          </div>
+
+          <button type="button" className="about__coffee" onClick={() => openUrl("https://muzammilijaz.gumroad.com/coffee")}>
+            ☕ Support this project — Buy me a coffee
+          </button>
         </div>
         <div className="modal__footer">
           <button type="button" className="btn btn--primary" onClick={onClose}>
@@ -946,6 +1027,7 @@ function Sidebar({
   showSettings,
   onToggleSettings,
   onShowAbout,
+  version,
 }: {
   statusTab: TaskStatus | "All";
   onStatusTab: (s: TaskStatus | "All") => void;
@@ -956,6 +1038,7 @@ function Sidebar({
   showSettings: boolean;
   onToggleSettings: () => void;
   onShowAbout: () => void;
+  version: string;
 }) {
   return (
     <aside className="sidebar">
@@ -963,7 +1046,9 @@ function Sidebar({
         <img src={logo} alt="ODM" className="sidebar__logo" />
         <div>
           <div className="sidebar__brand">ODM</div>
-          <div className="sidebar__tagline">Open Download Manager</div>
+          <div className="sidebar__tagline">
+            Open Download Manager{version ? <span className="sidebar__version"> · v{version}</span> : null}
+          </div>
         </div>
       </div>
 
@@ -1040,6 +1125,8 @@ function App() {
   const [updatingEngine, setUpdatingEngine] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const tasksRef = useRef<Task[]>([]);
+  const appVersion = useAppVersion();
+  const { update: availableUpdate, dismiss: dismissUpdate } = useUpdateCheck(appVersion);
 
   function pushToast(toast: Omit<ToastItem, "id">) {
     const id = `${Date.now()}-${Math.random()}`;
@@ -1204,9 +1291,21 @@ function App() {
           showSettings={showSettings}
           onToggleSettings={() => setShowSettings((s) => !s)}
           onShowAbout={() => setShowAbout(true)}
+          version={appVersion}
         />
 
         <div className="main-content">
+          {availableUpdate && (
+            <div className="update-banner">
+              <span>🎉 ODM v{availableUpdate.version} is available (you're on v{appVersion}).</span>
+              <button type="button" className="btn btn--primary btn--sm" onClick={() => openUrl(availableUpdate.url)}>
+                View release
+              </button>
+              <button type="button" className="update-banner__dismiss" onClick={dismissUpdate} aria-label="Dismiss">
+                ×
+              </button>
+            </div>
+          )}
           <header className="toolbar">
             <button
               className="btn btn--primary"
@@ -1349,7 +1448,7 @@ function App() {
         />
       )}
 
-      {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
+      {showAbout && <AboutModal onClose={() => setShowAbout(false)} version={appVersion} />}
 
       {contextMenu && (
         <ContextMenu x={contextMenu.x} y={contextMenu.y} task={contextMenu.task} menu={rowMenu} onClose={() => setContextMenu(null)} />

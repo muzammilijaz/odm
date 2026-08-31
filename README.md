@@ -42,3 +42,16 @@ to build and load the browser extension.
 
 [AGPL-3.0](LICENSE). Contributions welcome — see
 [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## About
+
+Built by **Muzammil Ijaz**. More projects: <https://github.com/muzammilijaz>
+
+## ☕ Support My Work
+
+If my projects help you, consider buying me a coffee ❤️
+
+👉 <https://muzammilijaz.gumroad.com/coffee>
+
+Every contribution helps me continue building free tools and open-source
+projects.

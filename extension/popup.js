@@ -89,5 +89,7 @@ autoCaptureEl.addEventListener("change", () => {
   chrome.storage.local.set({ autoCapture: autoCaptureEl.checked });
 });
 
+document.getElementById("version").textContent = `v${chrome.runtime.getManifest().version}`;
+
 checkHostStatus();
 loadDetected();

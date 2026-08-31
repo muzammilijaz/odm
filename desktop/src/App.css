@@ -978,6 +978,92 @@ button {
   font-size: 0.82rem;
 }
 
+.about__divider {
+  width: 100%;
+  height: 1px;
+  background: var(--border);
+  margin: 14px 0 12px;
+}
+
+.about__author {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.about__author-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.about__coffee {
+  margin-top: 14px;
+  width: 100%;
+  padding: 9px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--warn);
+  background: var(--warn-bg);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.about__coffee:hover {
+  filter: brightness(1.08);
+}
+
+.sidebar__version {
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: var(--accent-light);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.update-banner .btn--sm {
+  padding: 4px 10px;
+  font-size: 0.78rem;
+}
+
+.update-banner__dismiss {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.update-banner__dismiss:hover {
+  color: var(--text);
+}
+
 /* Categories panel (reused settings view) */
 .categories {
   flex: 1;

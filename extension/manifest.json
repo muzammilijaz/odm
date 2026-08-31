@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ODM - Open Download Manager",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Capture downloads, links, and video/audio streams from your browser and send them to the free, open-source ODM desktop app for faster multi-connection downloading.",
   "author": "Muzammil Ijaz",
   "homepage_url": "https://github.com/muzammilijaz/odm",

@@ -75,6 +75,10 @@
         color: var(--muted);
       }
 
+      header .titles .version {
+        opacity: 0.75;
+      }
+
       .status-dot {
         margin-left: auto;
         display: flex;
@@ -307,7 +311,7 @@
       <img src="icons/icon48.png" alt="ODM" />
       <div class="titles">
         <span class="name">ODM</span>
-        <span class="tagline">Open Download Manager</span>
+        <span class="tagline">Open Download Manager <span id="version" class="version"></span></span>
       </div>
       <div class="status-dot" id="host-status">
         <span class="dot"></span>
