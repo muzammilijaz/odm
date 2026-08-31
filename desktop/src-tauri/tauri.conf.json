@@ -7,6 +7,10 @@
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
+    "beforeBundleCommand": {
+      "script": "powershell -ExecutionPolicy Bypass -File stage-extension.ps1",
+      "cwd": "."
+    },
     "frontendDist": "../dist"
   },
   "app": {
@@ -34,7 +38,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["binaries/*", "resources/vc_redist.x64.exe"],
+    "resources": ["binaries/*", "resources/vc_redist.x64.exe", "resources/extension/**/*"],
     "windows": {
       "nsis": {
         "installerHooks": "windows/hooks.nsh"

@@ -13,3 +13,9 @@ curl -L "https://aka.ms/vs/17/release/vc_redist.x64.exe" -o vc_redist.x64.exe
 ```
 
 (from this `resources/` directory).
+
+`extension/` in this folder is also gitignored, but for a different reason:
+it's generated automatically by `../stage-extension.ps1` (wired up as
+`tauri.conf.json`'s `beforeBundleCommand`), which copies the browser
+extension's loadable files in from `../../../extension/` at build time. No
+manual step needed for that one.

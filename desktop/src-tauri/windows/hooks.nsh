@@ -16,4 +16,11 @@
     ExecWait '"$INSTDIR\resources\vc_redist.x64.exe" /install /quiet /norestart' $1
     DetailPrint "VC++ runtime installer exit code: $1"
   ${EndIf}
+
+  ; The browser extension can't be silently installed -- Chrome blocks
+  ; unsolicited .crx installs outside the Web Store (see extension/INSTALL.md)
+  ; -- so the best we can do is open its folder and tell the user the two
+  ; clicks left: chrome://extensions -> Developer mode -> Load unpacked.
+  MessageBox MB_OK "ODM installed successfully.$\r$\n$\r$\nTo add the browser extension: this folder will open next -- go to chrome://extensions, turn on Developer mode (top-right), click 'Load unpacked', and select this folder."
+  ExecShell "open" "$INSTDIR\resources\extension"
 !macroend

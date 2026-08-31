@@ -21,6 +21,10 @@ desktop/src-tauri/binaries/*
 # VC++ redistributable bundled into the installer -- ~24MB, fetched fresh at
 # build time (see desktop/src-tauri/resources/README.md) rather than
 # committed, same reasoning as the sidecar binaries above.
+#
+# resources/extension/ is likewise generated (by stage-extension.ps1, run
+# automatically via tauri.conf.json's beforeBundleCommand) -- a copy of
+# extension/'s browser-loadable files, not a separate source of truth.
 desktop/src-tauri/resources/*
 !desktop/src-tauri/resources/README.md
 
