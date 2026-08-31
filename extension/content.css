@@ -1,0 +1,62 @@
+#odm-download-badge {
+  position: fixed;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  background: #111827ee;
+  backdrop-filter: blur(6px);
+  border: 1px solid #334155;
+  border-radius: 8px;
+  font: 600 12px "Inter", "Segoe UI", -apple-system, sans-serif;
+  color: #f8fafc;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  user-select: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+#odm-download-badge:hover {
+  border-color: #3b82f6;
+  background: #1e293bee;
+}
+
+#odm-download-badge .odm-badge-icon {
+  display: flex;
+  align-items: center;
+  color: #3b82f6;
+  font-size: 13px;
+}
+
+#odm-download-badge .odm-badge-close {
+  margin-left: 4px;
+  color: #94a3b8;
+  font-weight: bold;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+#odm-download-badge .odm-badge-close:hover {
+  color: #dc2626;
+}
+
+#odm-download-badge.odm-state-sending {
+  opacity: 0.7;
+}
+
+#odm-download-badge.odm-state-sent {
+  border-color: #16a34a;
+}
+
+#odm-download-badge.odm-state-sent .odm-badge-icon {
+  color: #16a34a;
+}
+
+#odm-download-badge.odm-state-error {
+  border-color: #dc2626;
+}
+
+#odm-download-badge.odm-state-error .odm-badge-icon {
+  color: #dc2626;
+}

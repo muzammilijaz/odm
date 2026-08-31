@@ -1,0 +1,7 @@
+{
+  "name": "com.odm.nativehost",
+  "description": "ODM (Open Download Manager) native messaging host",
+  "path": "REPLACED_AT_INSTALL_TIME.exe",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://igjebnkcfkjpleeahgjnpdkahplddfdc/"]
+}

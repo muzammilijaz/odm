@@ -1,0 +1,9 @@
+﻿{
+    "name":  "com.odm.nativehost",
+    "description":  "ODM (Open Download Manager) native messaging host",
+    "path":  "D:\\ODM\\odm\\target\\debug\\odm-native-host.exe",
+    "type":  "stdio",
+    "allowed_origins":  [
+                            "chrome-extension://igjebnkcfkjpleeahgjnpdkahplddfdc/"
+                        ]
+}

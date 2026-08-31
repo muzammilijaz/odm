@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = ["crates/odm-engine", "crates/odm-core", "crates/odm-native-host", "desktop/src-tauri"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"

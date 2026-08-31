@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "ODM - Open Download Manager",
+  "version": "0.1.0",
+  "description": "Send links and detected video/audio streams to ODM (Open Download Manager) via the desktop app.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAogQjMKNef4DsbgxfZB5qxibHW6+5YrwLyw5TR6t+bKFhPJ3eS2RkveV9G7afYEn/eZzc42sIQoO0drcODBgdlUA56VP+ASwPirCBP7pVqO1zgCJ9U0+Iir1hsjch6lOfUQ44yknTWI3+MN7FoMDeQALk1tdqFBJ1kG9+K5x67VEti4FzeWWc1vtsLhQPSfCgWfHj5Kg4T8x4iwbX6LlUTo/P/qItBM5DJdymHACnGsIkdsOnoaXSQAU5DJGqBJLuHCF0vinQAhQdDD+StYgZ38jP76//gLOLXBU/8w9RVD0ZDBK+xuYX43As5fmNH1A4R9p2760XkfTVtNMJtQg8jwIDAQAB",
+  "permissions": ["contextMenus", "webRequest", "storage", "nativeMessaging", "downloads"],
+  "host_permissions": ["<all_urls>"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ODM - Open Download Manager",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}

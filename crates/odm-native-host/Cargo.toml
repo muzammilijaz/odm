@@ -1,0 +1,15 @@
+[package]
+name = "odm-native-host"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Chrome/Edge Native Messaging host for the ODM browser extension — relays to the desktop app's local HTTP API"
+
+[[bin]]
+name = "odm-native-host"
+path = "src/main.rs"
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

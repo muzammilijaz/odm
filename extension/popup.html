@@ -1,0 +1,341 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>ODM</title>
+    <style>
+      :root {
+        --bg: #0b1120;
+        --panel: #111827;
+        --panel-2: #1e293b;
+        --border: #334155;
+        --border-strong: #475569;
+        --text: #f8fafc;
+        --text-secondary: #cbd5e1;
+        --muted: #94a3b8;
+
+        --accent: #3b82f6;
+        --accent-hover: #2563eb;
+        --accent-light: rgba(59, 130, 246, 0.16);
+
+        --ok: #16a34a;
+        --danger: #dc2626;
+        --danger-bg: rgba(220, 38, 38, 0.16);
+
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 14px;
+        --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.32);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        font: 13px "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+        width: 340px;
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 16px 12px;
+        border-bottom: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(59, 130, 246, 0.1), transparent);
+      }
+
+      header img {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        box-shadow: var(--shadow-md);
+      }
+
+      header .titles {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        line-height: 1.25;
+      }
+
+      header .titles .name {
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+      }
+
+      header .titles .tagline {
+        font-size: 10.5px;
+        color: var(--muted);
+      }
+
+      .status-dot {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 10.5px;
+        color: var(--muted);
+      }
+
+      .status-dot .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--muted);
+        transition: background 0.2s ease;
+      }
+
+      .status-dot.online .dot {
+        background: var(--ok);
+        box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.2);
+      }
+
+      .status-dot.offline .dot {
+        background: var(--danger);
+        box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.2);
+      }
+
+      main {
+        padding: 12px 16px 14px;
+      }
+
+      .toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 9px 10px;
+        margin-bottom: 12px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+      }
+
+      .toggle-row .label {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+
+      .toggle-row .label .title {
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .toggle-row .label .desc {
+        font-size: 10.5px;
+        color: var(--muted);
+      }
+
+      /* Switch */
+      .switch {
+        position: relative;
+        width: 34px;
+        height: 20px;
+        flex-shrink: 0;
+      }
+
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .switch .track {
+        position: absolute;
+        inset: 0;
+        background: var(--border-strong);
+        border-radius: 999px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+
+      .switch .track::before {
+        content: "";
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        left: 2px;
+        top: 2px;
+        border-radius: 50%;
+        background: #f8fafc;
+        transition: transform 0.15s ease;
+      }
+
+      .switch input:checked + .track {
+        background: var(--accent);
+      }
+
+      .switch input:checked + .track::before {
+        transform: translateX(14px);
+      }
+
+      .section-label {
+        font-size: 10.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+
+      .add-row {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 14px;
+      }
+
+      input[type="url"] {
+        flex: 1;
+        min-width: 0;
+        padding: 7px 10px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--text);
+        font: inherit;
+        outline: none;
+        transition: border-color 0.15s ease;
+      }
+
+      input[type="url"]:focus {
+        border-color: var(--accent);
+      }
+
+      input[type="url"]::placeholder {
+        color: var(--muted);
+      }
+
+      button {
+        border: none;
+        background: var(--accent);
+        color: #fff;
+        border-radius: var(--radius-sm);
+        padding: 7px 14px;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 600;
+        transition: background 0.15s ease;
+      }
+
+      button:hover {
+        background: var(--accent-hover);
+      }
+
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        max-height: 200px;
+        overflow-y: auto;
+        border-radius: var(--radius-md);
+      }
+
+      li {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        margin-bottom: 6px;
+      }
+
+      li:last-child {
+        margin-bottom: 0;
+      }
+
+      li .url {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11px;
+        color: var(--text-secondary);
+      }
+
+      li button {
+        padding: 5px 10px;
+        font-size: 11.5px;
+        flex-shrink: 0;
+      }
+
+      .empty {
+        color: var(--muted);
+        padding: 16px 0;
+        text-align: center;
+        font-size: 12px;
+        background: none;
+        border: 1px dashed var(--border);
+      }
+
+      .status {
+        margin-top: 10px;
+        font-size: 11px;
+        color: var(--muted);
+        min-height: 14px;
+        text-align: center;
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      .status.ok {
+        color: var(--ok);
+      }
+
+      footer {
+        padding: 8px 16px 12px;
+        text-align: center;
+        font-size: 10px;
+        color: var(--muted);
+        border-top: 1px solid var(--border);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <img src="icons/icon48.png" alt="ODM" />
+      <div class="titles">
+        <span class="name">ODM</span>
+        <span class="tagline">Open Download Manager</span>
+      </div>
+      <div class="status-dot" id="host-status">
+        <span class="dot"></span>
+        <span class="text">Checking…</span>
+      </div>
+    </header>
+    <main>
+      <label class="toggle-row">
+        <div class="label">
+          <span class="title">Auto-capture downloads</span>
+          <span class="desc">Send browser downloads straight to ODM</span>
+        </div>
+        <span class="switch">
+          <input type="checkbox" id="auto-capture" />
+          <span class="track"></span>
+        </span>
+      </label>
+
+      <form class="add-row" id="add-form">
+        <input type="url" id="add-url" placeholder="Paste a link to download…" required />
+        <button type="submit">Add</button>
+      </form>
+
+      <p class="section-label">Detected on this page</p>
+      <ul id="detected-list"></ul>
+      <div class="status" id="status"></div>
+    </main>
+    <footer>ODM · Open Download Manager</footer>
+    <script src="popup.js"></script>
+  </body>
+</html>
