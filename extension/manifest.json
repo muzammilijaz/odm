@@ -2,10 +2,9 @@
   "manifest_version": 3,
   "name": "ODM - Open Download Manager",
   "version": "1.0.0",
-  "description": "Capture downloads, links, and video/audio streams from your browser and send them to the free, open-source ODM desktop app for faster multi-connection downloading.",
+  "description": "Send videos, audio, and downloads to ODM -- a free, open-source manager with fast multi-connection downloading.",
   "author": "Muzammil Ijaz",
   "homepage_url": "https://github.com/muzammilijaz/odm",
-  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAogQjMKNef4DsbgxfZB5qxibHW6+5YrwLyw5TR6t+bKFhPJ3eS2RkveV9G7afYEn/eZzc42sIQoO0drcODBgdlUA56VP+ASwPirCBP7pVqO1zgCJ9U0+Iir1hsjch6lOfUQ44yknTWI3+MN7FoMDeQALk1tdqFBJ1kG9+K5x67VEti4FzeWWc1vtsLhQPSfCgWfHj5Kg4T8x4iwbX6LlUTo/P/qItBM5DJdymHACnGsIkdsOnoaXSQAU5DJGqBJLuHCF0vinQAhQdDD+StYgZ38jP76//gLOLXBU/8w9RVD0ZDBK+xuYX43As5fmNH1A4R9p2760XkfTVtNMJtQg8jwIDAQAB",
   "permissions": ["contextMenus", "webRequest", "storage", "nativeMessaging", "downloads"],
   "host_permissions": ["<all_urls>"],
   "icons": {
