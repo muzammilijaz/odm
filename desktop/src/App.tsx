@@ -3,6 +3,9 @@ import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { currentMonitor } from "@tauri-apps/api/window";
 import { api } from "./api";
 import { useTaskSpeeds } from "./useTaskSpeeds";
 import type { Category, Task, TaskStatus, TaskWithSpeed } from "./types";
@@ -87,6 +90,145 @@ function useUpdateCheck(currentVersion: string) {
   return { update, dismiss };
 }
 
+type Theme = "light" | "dark";
+const THEME_STORAGE_KEY = "odm-theme";
+
+/** Explicit light/dark choice, persisted across launches. Falls back to the
+ * OS preference the first time the app runs (before any choice is saved). */
+function useTheme(): [Theme, () => void] {
+  const [theme, setTheme] = useState<Theme>(() => {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === "light" || stored === "dark") return stored;
+    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
+
+  function toggleTheme() {
+    setTheme((t) => (t === "dark" ? "light" : "dark"));
+  }
+
+  return [theme, toggleTheme];
+}
+
+type NotifyKind = "start" | "complete" | "failed";
+interface NotifyPrefs {
+  start: boolean;
+  complete: boolean;
+  failed: boolean;
+}
+const NOTIFY_DEFAULTS: NotifyPrefs = { start: false, complete: true, failed: true };
+
+/** OS-notification toggles, persisted via the same backend key/value store
+ * cookies settings use. "start" defaults off since a batch of downloads
+ * kicking off at once would otherwise spam the notification tray. */
+function useNotificationPrefs() {
+  const [prefs, setPrefs] = useState<NotifyPrefs>(NOTIFY_DEFAULTS);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    Promise.all([api.getSetting("notify_start"), api.getSetting("notify_complete"), api.getSetting("notify_failed")])
+      .then(([start, complete, failed]) => {
+        setPrefs({
+          start: start === null ? NOTIFY_DEFAULTS.start : start === "true",
+          complete: complete === null ? NOTIFY_DEFAULTS.complete : complete === "true",
+          failed: failed === null ? NOTIFY_DEFAULTS.failed : failed === "true",
+        });
+      })
+      .finally(() => setLoaded(true));
+  }, []);
+
+  async function setPref(kind: NotifyKind, value: boolean) {
+    setPrefs((p) => ({ ...p, [kind]: value }));
+    await api.setSetting(`notify_${kind}`, value ? "true" : "false");
+  }
+
+  return { prefs, setPref, loaded };
+}
+
+function NotificationSettings({ prefs, setPref, loaded }: { prefs: NotifyPrefs; setPref: (kind: NotifyKind, value: boolean) => void; loaded: boolean }) {
+  if (!loaded) return null;
+  const rows: Array<{ key: NotifyKind; label: string; hint: string }> = [
+    { key: "start", label: "Download started", hint: "Notify when a download begins" },
+    { key: "complete", label: "Download completed", hint: "Notify when a download finishes successfully" },
+    { key: "failed", label: "Download failed", hint: "Notify when a download fails" },
+  ];
+
+  return (
+    <div className="category">
+      {rows.map((r) => (
+        <label key={r.key} className="modal__checkbox" style={{ justifyContent: "space-between" }}>
+          <span>
+            <strong>{r.label}</strong>
+            <div className="category__folder">{r.hint}</div>
+          </span>
+          <input type="checkbox" checked={prefs[r.key]} onChange={(e) => setPref(r.key, e.currentTarget.checked)} />
+        </label>
+      ))}
+    </div>
+  );
+}
+
+interface DialogPrefs {
+  /** Show the category/save-path preview in the Add Download modal before
+   * a download actually starts. */
+  showStartDetails: boolean;
+  /** Show the blocking "Download complete" dialog when a task finishes
+   * (in addition to the toast + OS notification, which have their own
+   * independent toggles). */
+  showCompleteDialog: boolean;
+}
+const DIALOG_PREF_DEFAULTS: DialogPrefs = { showStartDetails: true, showCompleteDialog: true };
+
+/** Persisted the same way as notification prefs -- backend key/value store. */
+function useDialogPrefs() {
+  const [prefs, setPrefs] = useState<DialogPrefs>(DIALOG_PREF_DEFAULTS);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    Promise.all([api.getSetting("dialog_start_details"), api.getSetting("dialog_complete")])
+      .then(([startDetails, complete]) => {
+        setPrefs({
+          showStartDetails: startDetails === null ? DIALOG_PREF_DEFAULTS.showStartDetails : startDetails === "true",
+          showCompleteDialog: complete === null ? DIALOG_PREF_DEFAULTS.showCompleteDialog : complete === "true",
+        });
+      })
+      .finally(() => setLoaded(true));
+  }, []);
+
+  async function setPref(key: keyof DialogPrefs, value: boolean) {
+    setPrefs((p) => ({ ...p, [key]: value }));
+    await api.setSetting(key === "showStartDetails" ? "dialog_start_details" : "dialog_complete", value ? "true" : "false");
+  }
+
+  return { prefs, setPref, loaded };
+}
+
+function DialogSettings({ prefs, setPref, loaded }: { prefs: DialogPrefs; setPref: (key: keyof DialogPrefs, value: boolean) => void; loaded: boolean }) {
+  if (!loaded) return null;
+  const rows: Array<{ key: keyof DialogPrefs; label: string; hint: string }> = [
+    { key: "showStartDetails", label: "Show details before starting", hint: "Preview category & save folder in the Add Download box" },
+    { key: "showCompleteDialog", label: "Show \"Download complete\" popup", hint: "Pop up a dialog with Open / Open Folder when a download finishes" },
+  ];
+
+  return (
+    <div className="category">
+      {rows.map((r) => (
+        <label key={r.key} className="modal__checkbox" style={{ justifyContent: "space-between" }}>
+          <span>
+            <strong>{r.label}</strong>
+            <div className="category__folder">{r.hint}</div>
+          </span>
+          <input type="checkbox" checked={prefs[r.key]} onChange={(e) => setPref(r.key, e.currentTarget.checked)} />
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function formatAdded(iso: string): string {
   const d = new Date(iso);
   const today = new Date();
@@ -134,6 +276,69 @@ const CATEGORY_THUMB: Record<string, { bg: string; icon: string }> = {
 
 function thumbFor(category: string | null) {
   return CATEGORY_THUMB[(category || "").toLowerCase()] || { bg: "#64748b", icon: "📦" };
+}
+
+type PopupType = "started" | "complete" | "failed";
+
+const POPUP_SIZE: Record<PopupType, { width: number; height: number }> = {
+  started: { width: 380, height: 96 },
+  failed: { width: 380, height: 110 },
+  complete: { width: 420, height: 410 },
+};
+
+// Vertical stacking slots so several popups spawned close together (a batch
+// of downloads finishing around the same time) don't land on top of each
+// other -- freed again once the corresponding window closes.
+const usedPopupSlots = new Set<number>();
+function acquirePopupSlot(): number {
+  let i = 0;
+  while (usedPopupSlots.has(i)) i++;
+  usedPopupSlots.add(i);
+  return i;
+}
+
+/** Spawns a small always-on-top, taskbar-less window anchored to the
+ * bottom-right of the screen -- our own desktop-level notification, styled
+ * with ODM's own design system, since Windows only shows properly-branded
+ * native toasts for an installed app with a registered AUMID (an
+ * unpackaged `tauri dev` build doesn't have one, so OS toasts silently
+ * disappear there). Best-effort: never throws into the caller. */
+async function spawnPopup(type: PopupType, fields: Record<string, string>) {
+  try {
+    const monitor = await currentMonitor();
+    const scale = monitor?.scaleFactor || 1;
+    const screenW = (monitor?.size.width || 1920) / scale;
+    const screenH = (monitor?.size.height || 1080) / scale;
+    const { width, height } = POPUP_SIZE[type];
+    const margin = 20;
+    const slot = acquirePopupSlot();
+    const x = Math.round(screenW - width - margin);
+    const y = Math.round(screenH - height - margin - 48 - slot * (height + 12));
+    const label = `popup-${type}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    const search = new URLSearchParams({ popup: type, ...fields }).toString();
+
+    const win = new WebviewWindow(label, {
+      url: `index.html?${search}`,
+      width,
+      height,
+      x,
+      y,
+      decorations: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      // Windows/WebView2 doesn't reliably route mouse input to an
+      // unfocused window -- clicks (even a plain checkbox toggle) silently
+      // did nothing when this was `focus: false`. Letting it take focus on
+      // creation costs a brief focus steal but keeps the popup interactive.
+      shadow: true,
+      visible: true,
+    });
+    win.once("tauri://destroyed", () => usedPopupSlots.delete(slot));
+    win.once("tauri://error", () => usedPopupSlots.delete(slot));
+  } catch {
+    // best effort -- a failed popup should never block the download flow
+  }
 }
 
 // One consistent outline icon set (Feather-style paths) for the sidebar --
@@ -225,6 +430,24 @@ const ICON_PATHS: Record<string, ReactElement> = {
       <circle cx="12" cy="12" r="10" />
       <line x1="12" y1="16" x2="12" y2="12" />
       <line x1="12" y1="8" x2="12.01" y2="8" />
+    </>
+  ),
+  sun: (
+    <>
+      <circle cx="12" cy="12" r="5" />
+      <line x1="12" y1="1" x2="12" y2="3" />
+      <line x1="12" y1="21" x2="12" y2="23" />
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+      <line x1="1" y1="12" x2="3" y2="12" />
+      <line x1="21" y1="12" x2="23" y2="12" />
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+    </>
+  ),
+  moon: (
+    <>
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
     </>
   ),
 };
@@ -674,13 +897,51 @@ function isKnownVideoUrl(url: string): boolean {
   }
 }
 
-function AddDownloadModal({ initialUrl, onClose, onAdded }: { initialUrl?: string; onClose: () => void; onAdded: () => void }) {
+/** Best-effort client-side guess of which category a URL will land in --
+ * purely a preview for the "before you start" details box; the backend
+ * (odm-engine) is the actual authority on file-extension -> category
+ * routing once the download runs. */
+function guessCategory(url: string, categories: Category[]): Category | null {
+  try {
+    const ext = new URL(url).pathname.split(".").pop()?.toLowerCase();
+    if (ext) {
+      const match = categories.find((c) => c.extensions.some((e) => e.toLowerCase().replace(/^\./, "") === ext));
+      if (match) return match;
+    }
+  } catch {
+    // not a parseable URL yet -- no guess
+  }
+  return null;
+}
+
+function AddDownloadModal({
+  initialUrl,
+  categories,
+  showDetails,
+  onToggleShowDetails,
+  onClose,
+  onAdded,
+}: {
+  initialUrl?: string;
+  categories: Category[];
+  showDetails: boolean;
+  onToggleShowDetails: (show: boolean) => void;
+  onClose: () => void;
+  onAdded: () => void;
+}) {
   const [url, setUrl] = useState(initialUrl || "");
   const [filename, setFilename] = useState("");
   const [playlist, setPlaylist] = useState(false);
+  const [categoryName, setCategoryName] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isVideoSite = isKnownVideoUrl(url);
+  const guessed = useMemo(() => guessCategory(url, categories), [url, categories]);
+  const selectedCategory = categories.find((c) => c.name === categoryName) || guessed;
+
+  useEffect(() => {
+    if (guessed && !categoryName) setCategoryName(guessed.name);
+  }, [guessed, categoryName]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -723,6 +984,36 @@ function AddDownloadModal({ initialUrl, onClose, onAdded }: { initialUrl?: strin
           </>
         )}
 
+        {showDetails && (
+          <div className="download-details">
+            {!isVideoSite && (
+              <>
+                <label className="modal__label">Category</label>
+                <select className="toolbar__select" value={categoryName} onChange={(e) => setCategoryName(e.currentTarget.value)}>
+                  <option value="">Auto-detect</option>
+                  {categories.map((c) => (
+                    <option key={c.name} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            <div className="download-details__row">
+              <span className="download-details__label">Save to:</span>
+              <span className="download-details__value">
+                {isVideoSite ? "Video" : selectedCategory ? `${selectedCategory.default_folder}/` : "Detected automatically"}
+                {filename ? `${filename}` : ""}
+              </span>
+            </div>
+          </div>
+        )}
+
+        <label className="modal__checkbox modal__checkbox--muted">
+          <input type="checkbox" checked={!showDetails} onChange={(e) => onToggleShowDetails(!e.currentTarget.checked)} />
+          Don't show download details before starting
+        </label>
+
         {error && <div className="form-error">{error}</div>}
 
         <div className="modal__footer">
@@ -730,7 +1021,7 @@ function AddDownloadModal({ initialUrl, onClose, onAdded }: { initialUrl?: strin
             Cancel
           </button>
           <button type="submit" className="btn btn--primary" disabled={busy}>
-            {busy ? "Adding…" : "+ Add Download"}
+            {busy ? "Starting…" : "Start Download"}
           </button>
         </div>
       </form>
@@ -925,11 +1216,39 @@ function CookiesSetting() {
   );
 }
 
-function CategoriesPanel({ categories, onChange }: { categories: Category[]; onChange: () => void }) {
+function CategoriesPanel({
+  categories,
+  onChange,
+  notifyPrefs,
+  onSetNotifyPref,
+  notifyPrefsLoaded,
+  dialogPrefs,
+  onSetDialogPref,
+  dialogPrefsLoaded,
+}: {
+  categories: Category[];
+  onChange: () => void;
+  notifyPrefs: NotifyPrefs;
+  onSetNotifyPref: (kind: NotifyKind, value: boolean) => void;
+  notifyPrefsLoaded: boolean;
+  dialogPrefs: DialogPrefs;
+  onSetDialogPref: (key: keyof DialogPrefs, value: boolean) => void;
+  dialogPrefsLoaded: boolean;
+}) {
   const [newExt, setNewExt] = useState<Record<string, string>>({});
 
   return (
     <div className="categories">
+      <section className="settings-section">
+        <h2 className="settings-section__title">Download dialogs</h2>
+        <DialogSettings prefs={dialogPrefs} setPref={onSetDialogPref} loaded={dialogPrefsLoaded} />
+      </section>
+
+      <section className="settings-section">
+        <h2 className="settings-section__title">Notifications</h2>
+        <NotificationSettings prefs={notifyPrefs} setPref={onSetNotifyPref} loaded={notifyPrefsLoaded} />
+      </section>
+
       <section className="settings-section">
         <h2 className="settings-section__title">Sign-in & cookies</h2>
         <CookiesSetting />
@@ -1028,6 +1347,8 @@ function Sidebar({
   onToggleSettings,
   onShowAbout,
   version,
+  theme,
+  onToggleTheme,
 }: {
   statusTab: TaskStatus | "All";
   onStatusTab: (s: TaskStatus | "All") => void;
@@ -1039,6 +1360,8 @@ function Sidebar({
   onToggleSettings: () => void;
   onShowAbout: () => void;
   version: string;
+  theme: Theme;
+  onToggleTheme: () => void;
 }) {
   return (
     <aside className="sidebar">
@@ -1090,6 +1413,14 @@ function Sidebar({
       </nav>
 
       <div className="sidebar__bottom">
+        <button
+          className="sidebar__theme-toggle"
+          onClick={onToggleTheme}
+          title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+        >
+          <Icon name={theme === "dark" ? "sun" : "moon"} />
+          {theme === "dark" ? "Light Mode" : "Dark Mode"}
+        </button>
         <button className={`sidebar__item${showSettings ? " sidebar__item--active" : ""}`} onClick={onToggleSettings}>
           <span className="sidebar__item-label">
             <Icon name="settings" />
@@ -1127,6 +1458,24 @@ function App() {
   const tasksRef = useRef<Task[]>([]);
   const appVersion = useAppVersion();
   const { update: availableUpdate, dismiss: dismissUpdate } = useUpdateCheck(appVersion);
+  const [theme, toggleTheme] = useTheme();
+  const { prefs: notifyPrefs, setPref: setNotifyPref, loaded: notifyPrefsLoaded } = useNotificationPrefs();
+  const notifyPrefsRef = useRef(notifyPrefs);
+  useEffect(() => {
+    notifyPrefsRef.current = notifyPrefs;
+  }, [notifyPrefs]);
+  const { prefs: dialogPrefs, setPref: setDialogPref, loaded: dialogPrefsLoaded } = useDialogPrefs();
+  const dialogPrefsRef = useRef(dialogPrefs);
+  useEffect(() => {
+    dialogPrefsRef.current = dialogPrefs;
+  }, [dialogPrefs]);
+
+  useEffect(() => {
+    (async () => {
+      const granted = await isPermissionGranted().catch(() => false);
+      if (!granted) await requestPermission().catch(() => {});
+    })();
+  }, []);
 
   function pushToast(toast: Omit<ToastItem, "id">) {
     const id = `${Date.now()}-${Math.random()}`;
@@ -1175,11 +1524,40 @@ function App() {
       const previousById = new Map(tasksRef.current.map((t) => [t.id, t]));
       for (const task of event.payload) {
         const before = previousById.get(task.id);
+
+        // "Started" covers a brand-new task that's already downloading and a
+        // Queued -> Downloading transition, but not a Paused -> Downloading
+        // resume (that's not really a "start" from the user's perspective).
+        const started = task.status === "Downloading" && (!before || (before.status !== "Downloading" && before.status !== "Paused"));
+        if (started && notifyPrefsRef.current.start) {
+          sendNotification({ title: "Download started", body: displayNameOf(task) });
+          spawnPopup("started", { name: displayNameOf(task) });
+        }
+
         if (before && before.status !== task.status) {
           if (task.status === "Completed") {
-            pushToast({ kind: "success", title: `${displayNameOf(task)} completed`, destPath: task.dest_path });
+            if (dialogPrefsRef.current.showCompleteDialog) {
+              const thumb = thumbFor(task.category);
+              spawnPopup("complete", {
+                name: displayNameOf(task),
+                url: task.url,
+                destPath: task.dest_path,
+                totalBytes: String(task.total_bytes || 0),
+                thumbBg: thumb.bg,
+                thumbIcon: thumb.icon,
+              });
+            } else {
+              pushToast({ kind: "success", title: `${displayNameOf(task)} completed`, destPath: task.dest_path });
+            }
+            if (notifyPrefsRef.current.complete) {
+              sendNotification({ title: "Download completed", body: displayNameOf(task) });
+            }
           } else if (task.status === "Failed") {
             pushToast({ kind: "error", title: `${displayNameOf(task)} failed — ${task.error_message || "connection interrupted"}` });
+            if (notifyPrefsRef.current.failed) {
+              sendNotification({ title: "Download failed", body: `${displayNameOf(task)} — ${task.error_message || "connection interrupted"}` });
+              spawnPopup("failed", { name: displayNameOf(task), error: task.error_message || "connection interrupted" });
+            }
           }
         }
       }
@@ -1292,6 +1670,8 @@ function App() {
           onToggleSettings={() => setShowSettings((s) => !s)}
           onShowAbout={() => setShowAbout(true)}
           version={appVersion}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
 
         <div className="main-content">
@@ -1333,7 +1713,7 @@ function App() {
               disabled={updatingEngine}
               title="Site extractors break as sites change — update yt-dlp to fix broken video downloads"
             >
-              {updatingEngine ? "Updating…" : "Update yt-dlp"}
+              {updatingEngine ? "⏳ Updating…" : "🔄 Update yt-dlp"}
             </button>
             <button className="btn" onClick={() => setShowSettings((s) => !s)}>
               ⚙ Settings
@@ -1341,7 +1721,16 @@ function App() {
           </header>
 
           {showSettings ? (
-            <CategoriesPanel categories={categories} onChange={refreshCategories} />
+            <CategoriesPanel
+              categories={categories}
+              onChange={refreshCategories}
+              notifyPrefs={notifyPrefs}
+              onSetNotifyPref={setNotifyPref}
+              notifyPrefsLoaded={notifyPrefsLoaded}
+              dialogPrefs={dialogPrefs}
+              onSetDialogPref={setDialogPref}
+              dialogPrefsLoaded={dialogPrefsLoaded}
+            />
           ) : (
             <>
               <div className="tabs-row">
@@ -1441,6 +1830,9 @@ function App() {
       {showAddModal && (
         <AddDownloadModal
           initialUrl={pasteUrl}
+          categories={categories}
+          showDetails={dialogPrefs.showStartDetails}
+          onToggleShowDetails={(show) => setDialogPref("showStartDetails", show)}
           onClose={() => setShowAddModal(false)}
           onAdded={() =>
             api.listDownloads().then((t) => {

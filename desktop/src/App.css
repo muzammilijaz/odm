@@ -40,7 +40,7 @@
 }
 
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     --bg: #f8fafc;
     --panel: #ffffff;
     --panel-2: #f1f5f9;
@@ -66,6 +66,34 @@
     --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
     --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
   }
+}
+
+/* Explicit theme choice (sidebar toggle) always wins over OS preference. */
+:root[data-theme="light"] {
+  --bg: #f8fafc;
+  --panel: #ffffff;
+  --panel-2: #f1f5f9;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text: #0f172a;
+  --text-secondary: #475569;
+  --muted: #94a3b8;
+
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-light: #eff6ff;
+  --cyan: #06b6d4;
+
+  --ok-bg: #f0fdf4;
+  --warn-bg: #fffbeb;
+  --danger-bg: #fef2f2;
+  --queued-bg: #f1f5f9;
+  --verifying-bg: #f5f3ff;
+
+  --row-hover: var(--panel-2);
+  --row-selected: var(--accent-light);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
 }
 
 * {
@@ -202,6 +230,27 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.sidebar__theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text-secondary);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.sidebar__theme-toggle:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
 }
 
 .main-content {
@@ -939,6 +988,158 @@ button {
 .form-error {
   color: var(--danger);
   font-size: 0.8rem;
+}
+
+.modal__checkbox--muted {
+  color: var(--muted);
+  font-size: 0.76rem;
+  margin-top: 12px;
+}
+
+/* Add Download modal -- category/save-path preview */
+.download-details {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel-2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.download-details__row {
+  display: flex;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+
+.download-details__label {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.download-details__value {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+/* Standalone popup windows (started / complete / failed) -- spawned as
+   separate always-on-top OS windows, see spawnPopup() in App.tsx.
+   (Not a transparent window -- Windows/WebView2 layered-window transparency
+   was swallowing clicks on the close button, so this is a plain opaque
+   frameless window instead.) */
+.popup-root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.popup-card {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  cursor: default;
+}
+
+.popup-card--compact {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.popup-card--danger {
+  border-color: var(--danger);
+}
+
+.popup-card__logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.popup-card__status-icon {
+  font-size: 1.5rem;
+  color: var(--danger);
+  flex-shrink: 0;
+}
+
+.popup-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.popup-card__title {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.popup-card__name {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup-card__error {
+  font-size: 0.74rem;
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup-card__close {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 1.15rem;
+  line-height: 1;
+  padding: 2px 6px;
+  flex-shrink: 0;
+}
+
+.popup-card__close:hover {
+  color: var(--danger);
+}
+
+.popup-card--complete {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 20px;
+  overflow-y: auto;
+}
+
+.popup-card--complete .modal__header {
+  margin-bottom: 0;
+}
+
+.download-complete {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.download-complete__icon {
+  width: 44px;
+  height: 44px;
+  font-size: 1.3rem;
+  border-radius: var(--radius-md);
+}
+
+.download-complete__text {
+  min-width: 0;
 }
 
 /* About modal */

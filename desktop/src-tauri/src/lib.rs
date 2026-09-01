@@ -21,6 +21,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![AUTOSTART_ARG])))
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // Launch on Windows startup by default, straight into the tray
             // (see AUTOSTART_ARG handling below) -- this is meant to always
