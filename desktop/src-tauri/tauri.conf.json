@@ -38,7 +38,14 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["binaries/*", "resources/vc_redist.x64.exe", "resources/extension/**/*"],
+    "resources": [
+      "binaries/*",
+      "resources/vc_redist.x64.exe",
+      "resources/extension/**/*",
+      "resources/odm-native-host.exe",
+      "resources/com.odm.nativehost.template.json",
+      "resources/register-native-host.ps1"
+    ],
     "windows": {
       "nsis": {
         "installerHooks": "windows/hooks.nsh"

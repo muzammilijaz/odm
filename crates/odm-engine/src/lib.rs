@@ -12,6 +12,7 @@ mod control;
 mod engine;
 mod error;
 mod posio;
+mod process_ext;
 mod progress;
 mod proxy;
 mod retry;

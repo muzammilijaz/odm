@@ -6,6 +6,11 @@
 //! Every message here is just relayed to the desktop app's local loopback
 //! HTTP API (see `desktop/src-tauri/src/http_api.rs`).
 
+// Chrome launches this as a child process and talks to it purely over
+// stdio -- there's no console I/O to show, so suppress the console window
+// Windows would otherwise flash open for a plain console-subsystem exe.
+#![windows_subsystem = "windows"]
+
 use serde_json::{json, Value};
 use std::io::{self, Read, Write};
 

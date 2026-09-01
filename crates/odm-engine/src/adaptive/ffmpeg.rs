@@ -1,6 +1,6 @@
 use crate::error::{EngineError, Result};
+use crate::process_ext::no_window_command;
 use std::path::{Path, PathBuf};
-use tokio::process::Command;
 
 /// Resolves the ffmpeg binary to invoke: an `ODM_FFMPEG_PATH` override, a
 /// bundled `ffmpeg`/`ffmpeg.exe` next to the running executable (how the Tauri
@@ -22,7 +22,7 @@ pub fn resolve_ffmpeg_path() -> PathBuf {
 }
 
 async fn run_ffmpeg(ffmpeg: &Path, args: &[&str]) -> Result<()> {
-    let output = Command::new(ffmpeg)
+    let output = no_window_command(ffmpeg)
         .args(args)
         .output()
         .await

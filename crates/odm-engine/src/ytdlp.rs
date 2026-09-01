@@ -6,11 +6,11 @@
 //! need account/API-signature resolution — YouTube, TikTok, Instagram, etc.
 
 use crate::error::{EngineError, Result};
+use crate::process_ext::no_window_command;
 use crate::progress::Progress;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
-use tokio::process::Command;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -92,7 +92,7 @@ pub fn resolve_quickjs_path() -> Option<PathBuf> {
 /// future quality-picker UI. Doesn't download anything.
 pub async fn probe_formats(url: &str) -> Result<serde_json::Value> {
     let ytdlp = resolve_ytdlp_path();
-    let output = Command::new(&ytdlp)
+    let output = no_window_command(&ytdlp)
         .args(["-J", "--no-playlist", url])
         .output()
         .await
@@ -124,7 +124,7 @@ pub async fn probe_title_thumbnail(url: &str) -> Result<(String, Option<String>)
 /// report of what happened ("up to date" / "updated to X" / etc).
 pub async fn update_ytdlp() -> Result<String> {
     let ytdlp = resolve_ytdlp_path();
-    let output = Command::new(&ytdlp).arg("-U").output().await.map_err(EngineError::Io)?;
+    let output = no_window_command(&ytdlp).arg("-U").output().await.map_err(EngineError::Io)?;
     if !output.status.success() {
         return Err(ytdlp_error(&output.stderr, output.status));
     }
@@ -308,7 +308,7 @@ pub async fn download_with_ytdlp(url: &str, dest_dir: &Path, opts: &YtdlpOptions
     }
     args.push(url.into());
 
-    let mut child = Command::new(&ytdlp)
+    let mut child = no_window_command(&ytdlp)
         .args(&args)
         // yt-dlp is a frozen Python program; Python block-buffers stdout
         // instead of flushing per line whenever it isn't a real terminal
