@@ -1,5 +1,5 @@
 [package]
-name = "desktop"
+name = "odm"
 version = "1.0.0"
 description = "ODM -- Open Download Manager"
 authors = ["Muzammil Ijaz"]

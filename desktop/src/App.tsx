@@ -319,6 +319,7 @@ async function spawnPopup(type: PopupType, fields: Record<string, string>) {
 
     const win = new WebviewWindow(label, {
       url: `index.html?${search}`,
+      title: "ODM",
       width,
       height,
       x,
