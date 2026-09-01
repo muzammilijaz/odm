@@ -1030,6 +1030,18 @@ button {
   filter: brightness(1.08);
 }
 
+.btn--coffee {
+  border-color: var(--warn);
+  background: var(--warn-bg);
+  font-weight: 600;
+}
+
+.btn--coffee:hover {
+  border-color: var(--warn);
+  background: var(--warn-bg);
+  filter: brightness(1.08);
+}
+
 .sidebar__version {
   font-weight: 400;
   opacity: 0.75;

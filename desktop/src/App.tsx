@@ -1324,6 +1324,9 @@ function App() {
 
             <div className="spacer" />
             {engineStatus && <span className="engine-status">{engineStatus}</span>}
+            <button className="btn btn--coffee" onClick={() => openUrl("https://muzammilijaz.gumroad.com/coffee")} title="Support this project">
+              ☕ Buy me a coffee
+            </button>
             <button
               className="btn"
               onClick={handleUpdateYtdlp}
