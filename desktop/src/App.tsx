@@ -45,6 +45,7 @@ function compareVersions(a: string, b: string): number {
 }
 
 const UPDATE_REPO = "muzammilijaz/odm";
+const CHROME_EXTENSION_URL = "https://chromewebstore.google.com/detail/odm-open-download-manager/lfpiggopnkjdgedghgapjnmijgckebkd";
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 /** Polls the GitHub Releases API for a newer tag than the running app's
@@ -1058,6 +1059,9 @@ function AboutModal({ onClose, version }: { onClose: () => void; version: string
           <button type="button" className="about__coffee" onClick={() => openUrl("https://muzammilijaz.gumroad.com/coffee")}>
             ☕ Support this project — Buy me a coffee
           </button>
+          <button type="button" className="about__extension" onClick={() => openUrl(CHROME_EXTENSION_URL)}>
+            Add the official Chrome extension
+          </button>
         </div>
         <div className="modal__footer">
           <button type="button" className="btn btn--primary" onClick={onClose}>
@@ -1705,6 +1709,9 @@ function App() {
 
             <div className="spacer" />
             {engineStatus && <span className="engine-status">{engineStatus}</span>}
+            <button className="btn btn--chrome" onClick={() => openUrl(CHROME_EXTENSION_URL)} title="Install the official ODM browser extension">
+              Add Chrome Extension
+            </button>
             <button className="btn btn--coffee" onClick={() => openUrl("https://muzammilijaz.gumroad.com/coffee")} title="Support this project">
               ☕ Buy me a coffee
             </button>

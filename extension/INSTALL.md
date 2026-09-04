@@ -1,4 +1,17 @@
-# Installing the ODM extension outside the Chrome Web Store
+# Installing the ODM browser extension
+
+## Chrome Web Store — recommended
+
+The official extension is published and can be installed without Developer
+mode:
+
+[![Add ODM to Chrome](https://img.shields.io/badge/Chrome_Web_Store-Add_to_Chrome-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/odm-open-download-manager/lfpiggopnkjdgedghgapjnmijgckebkd)
+
+Click the badge and select **Add to Chrome**. Install and run the ODM desktop
+app as well; it registers the local Native Messaging host automatically.
+
+The instructions below are retained only for extension development and
+enterprise deployment.
 
 ## Important: `.crx` files can't just be dragged into Chrome anymore
 
@@ -12,14 +25,7 @@ provided for completeness and for enterprise policy installs
 (`ExtensionInstallForcelist`) — **it is not a working "just click to
 install" path for a typical user.**
 
-The two ways that actually work:
-
-## Option A — Chrome Web Store (recommended, once published)
-
-Once published (see [CHROME_WEB_STORE.md](CHROME_WEB_STORE.md)), it's a
-normal one-click "Add to Chrome" install like any other extension.
-
-## Option B — Load unpacked (works today, no store needed)
+## Development fallback — Load unpacked
 
 1. Download and unzip `odm-extension.zip` (from
    [Releases](https://github.com/muzammilijaz/odm/releases), or build it

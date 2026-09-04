@@ -1231,6 +1231,25 @@ button {
   filter: brightness(1.08);
 }
 
+.about__extension {
+  margin-top: 8px;
+  width: 100%;
+  padding: 9px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid #4285f4;
+  background: rgba(66, 133, 244, 0.12);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.about__extension:hover {
+  filter: brightness(1.12);
+}
+
 .btn--coffee {
   border-color: var(--warn);
   background: var(--warn-bg);
@@ -1241,6 +1260,18 @@ button {
   border-color: var(--warn);
   background: var(--warn-bg);
   filter: brightness(1.08);
+}
+
+.btn--chrome {
+  border-color: #4285f4;
+  background: rgba(66, 133, 244, 0.12);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.btn--chrome:hover {
+  border-color: #34a853;
+  background: rgba(52, 168, 83, 0.14);
 }
 
 .sidebar__version {

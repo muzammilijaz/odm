@@ -38,17 +38,38 @@ $manifest.path = (Resolve-Path $exePath).Path
 $installedManifestPath = Join-Path $PSScriptRoot "native-host-manifest\com.odm.nativehost.installed.json"
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path $installedManifestPath -Encoding utf8
 
-function Register-NativeHost($registryRoot) {
-    $keyPath = "$registryRoot\Software\Google\Chrome\NativeMessagingHosts\com.odm.nativehost"
-    New-Item -Path $keyPath -Force | Out-Null
-    Set-ItemProperty -Path $keyPath -Name "(default)" -Value $installedManifestPath
+function Register-NativeHost([Microsoft.Win32.RegistryView]$view) {
+    $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
+        [Microsoft.Win32.RegistryHive]::CurrentUser,
+        $view
+    )
 
-    $edgeKeyPath = "$registryRoot\Software\Microsoft\Edge\NativeMessagingHosts\com.odm.nativehost"
-    New-Item -Path $edgeKeyPath -Force | Out-Null
-    Set-ItemProperty -Path $edgeKeyPath -Name "(default)" -Value $installedManifestPath
+    try {
+        foreach ($subKeyPath in @(
+            "Software\Google\Chrome\NativeMessagingHosts\com.odm.nativehost",
+            "Software\Microsoft\Edge\NativeMessagingHosts\com.odm.nativehost"
+        )) {
+            $subKey = $baseKey.CreateSubKey($subKeyPath)
+            try {
+                $subKey.SetValue("", $installedManifestPath, [Microsoft.Win32.RegistryValueKind]::String)
+            }
+            finally {
+                $subKey.Dispose()
+            }
+        }
+    }
+    finally {
+        $baseKey.Dispose()
+    }
 }
 
-Register-NativeHost "HKCU:"
+$registryViews = @([Microsoft.Win32.RegistryView]::Registry32)
+if ([Environment]::Is64BitOperatingSystem) {
+    $registryViews += [Microsoft.Win32.RegistryView]::Registry64
+}
+foreach ($view in $registryViews) {
+    Register-NativeHost $view
+}
 
 Write-Host "Registered ODM native messaging host:"
 Write-Host "  Binary:   $exePath"

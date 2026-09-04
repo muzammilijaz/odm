@@ -4,6 +4,11 @@ A free, open-source desktop download manager for Windows, built with
 Rust + Tauri + React. AGPL-3.0 licensed: free to use, free to modify, and any
 distributed or hosted fork must stay open too.
 
+[![Add ODM to Chrome](https://img.shields.io/badge/Chrome_Web_Store-Add_to_Chrome-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/odm-open-download-manager/lfpiggopnkjdgedghgapjnmijgckebkd)
+
+The official ODM extension is now available on the Chrome Web Store — no
+Developer mode, ZIP extraction, or **Load unpacked** steps are required.
+
 ## Features
 
 - Multi-connection chunked downloads with pause/resume, retry with backoff,
@@ -40,31 +45,20 @@ distributed or hosted fork must stay open too.
      (required by the bundled ffmpeg/yt-dlp).
    - Register the Native Messaging host so the browser extension can talk
      to the app — no manual setup needed.
-   - Open the extension folder and show a short reminder for step 2 below.
+   - Offer to open the official Chrome Web Store listing so you can add the
+     extension with one click.
 3. Launch **ODM** from the Start Menu.
 
 ### 2. Install the browser extension
 
-**Option A — Chrome Web Store** (once the listing is approved — check for a
-"CWS" badge/link on the [Releases](https://github.com/muzammilijaz/odm/releases)
-page or the project's GitHub page): click "Add to Chrome" and you're done.
+Click the badge below, then select **Add to Chrome**. The desktop installer
+also offers to open this page automatically when installation finishes.
 
-**Option B — Load unpacked** (works today, before/without store approval):
+[![Install the official ODM browser extension](https://img.shields.io/badge/Install_Official_Extension-Chrome_Web_Store-34A853?style=for-the-badge&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/odm-open-download-manager/lfpiggopnkjdgedghgapjnmijgckebkd)
 
-1. Download `odm-extension.zip` from the
-   [Releases](https://github.com/muzammilijaz/odm/releases) page (the same
-   installer step above also opens this folder for you if you installed the
-   app first).
-2. Unzip it anywhere on your computer.
-3. Open `chrome://extensions` (or `edge://extensions` for Microsoft Edge).
-4. Turn on **Developer mode** (top-right toggle).
-5. Click **Load unpacked** and select the unzipped folder.
-
-The extension works exactly the same either way — Chrome just shows a
-"Developer mode extensions" notice on startup for a side-loaded (Option B)
-install, which is normal and not specific to ODM. Once the Web Store
-listing is approved, you can remove the unpacked version and switch to
-Option A if you'd rather not see that notice.
+If you previously used the unpacked extension, remove it from
+`chrome://extensions` after installing the Web Store version to avoid running
+two copies. Developer mode is no longer needed.
 
 ### 3. Using it
 

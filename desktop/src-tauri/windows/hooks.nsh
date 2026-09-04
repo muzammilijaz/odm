@@ -25,15 +25,19 @@
   ExecWait 'powershell -ExecutionPolicy Bypass -File "$INSTDIR\resources\register-native-host.ps1"' $2
   DetailPrint "Native messaging host registration exit code: $2"
 
-  ; The browser extension can't be silently installed -- Chrome blocks
-  ; unsolicited .crx installs outside the Web Store (see extension/INSTALL.md)
-  ; -- so the best we can do is open its folder and tell the user the two
-  ; clicks left: chrome://extensions -> Developer mode -> Load unpacked.
-  MessageBox MB_OK "ODM installed successfully.$\r$\n$\r$\nTo add the browser extension: this folder will open next -- go to chrome://extensions, turn on Developer mode (top-right), click 'Load unpacked', and select this folder."
-  ExecShell "open" "$INSTDIR\resources\extension"
+  ; Chrome requires the user to confirm Web Store installations. Offer the
+  ; official listing now that it is published; no Developer mode is needed.
+  MessageBox MB_YESNO|MB_ICONINFORMATION "ODM installed successfully.$\r$\n$\r$\nWould you like to add the official ODM extension from the Chrome Web Store now?" IDNO +2
+  ExecShell "open" "https://chromewebstore.google.com/detail/odm-open-download-manager/lfpiggopnkjdgedghgapjnmijgckebkd"
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
+  SetRegView 32
   DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\com.odm.nativehost"
   DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\com.odm.nativehost"
+  ${If} ${RunningX64}
+    SetRegView 64
+    DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\com.odm.nativehost"
+    DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\com.odm.nativehost"
+  ${EndIf}
 !macroend

@@ -1,6 +1,6 @@
 [package]
 name = "odm"
-version = "1.0.0"
+version = "1.0.1"
 description = "ODM -- Open Download Manager"
 authors = ["Muzammil Ijaz"]
 edition = "2021"
@@ -31,4 +31,3 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"
 axum = "0.7"
 tower-http = { version = "0.6", features = ["cors"] }
 directories = "5"
-

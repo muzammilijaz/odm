@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.0.1 — Official Chrome Web Store Extension
+
+### Browser integration
+
+- Published the official ODM companion extension on the
+  [Chrome Web Store](https://chromewebstore.google.com/detail/odm-open-download-manager/lfpiggopnkjdgedghgapjnmijgckebkd).
+- Replaced the old Developer mode and **Load unpacked** installation flow with
+  a normal one-click **Add to Chrome** flow.
+- Added an **Add Chrome Extension** button beside **Buy me a coffee** in the
+  desktop app, plus another link in the About dialog.
+- The Windows installer now offers to open the official Web Store listing as
+  soon as setup finishes.
+
+### Fixes
+
+- Fixed `Access to the specified native messaging host is forbidden` for the
+  published extension by registering ODM's native host consistently in both
+  32-bit and 64-bit Windows registry views.
+- Native-host uninstall cleanup now removes both registry-view entries.
+
 ## v1.0.0 — First Release 🎉
 
 Free, open-source (AGPL-3.0) download manager for Windows. Everything below ships in a single installer — no separate downloads needed.
