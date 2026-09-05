@@ -1,9 +1,10 @@
 {
   "name": "odm",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
+    "predev": "powershell -NoProfile -ExecutionPolicy Bypass -File prepare-native-host.ps1",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",

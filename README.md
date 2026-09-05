@@ -17,6 +17,9 @@ Developer mode, ZIP extraction, or **Load unpacked** steps are required.
 - Video/audio site downloads (YouTube, TikTok, Instagram, and more) via a
   bundled `yt-dlp`, with cookie-based sign-in support for age/region-gated
   or bot-checked content.
+- Video quality selection from 144p through 4K in the browser extension and
+  desktop app, with a configurable default and automatic fallback when the
+  preferred resolution is unavailable.
 - Categories with configurable file-extension rules and per-category save
   folders.
 - A Chrome/Edge browser extension that auto-captures downloads from the

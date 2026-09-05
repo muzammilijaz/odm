@@ -11,12 +11,18 @@ pub const COOKIES_BROWSER: &str = "cookies_browser";
 /// store directly doesn't work (e.g. it's open and holding its own cookie
 /// file locked).
 pub const COOKIES_FILE: &str = "cookies_file";
+/// Default preferred video height: `"best"` or a decimal height such as `"720"`.
+pub const VIDEO_QUALITY: &str = "video_quality";
 
 impl Db {
     pub async fn get_setting(&self, key: &str) -> Result<Option<String>> {
         let key = key.to_string();
         self.with_conn(move |conn| {
-            Ok(conn.query_row("SELECT value FROM settings WHERE key = ?1", [&key], |r| r.get::<_, String>(0)).optional()?)
+            Ok(conn
+                .query_row("SELECT value FROM settings WHERE key = ?1", [&key], |r| {
+                    r.get::<_, String>(0)
+                })
+                .optional()?)
         })
         .await
     }
@@ -25,7 +31,10 @@ impl Db {
         let key = key.to_string();
         let value = value.to_string();
         self.with_conn(move |conn| {
-            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)", params![key, value])?;
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+                params![key, value],
+            )?;
             Ok(())
         })
         .await
@@ -51,7 +60,10 @@ mod tests {
         assert_eq!(db.get_setting(COOKIES_BROWSER).await.unwrap(), None);
 
         db.set_setting(COOKIES_BROWSER, "chrome").await.unwrap();
-        assert_eq!(db.get_setting(COOKIES_BROWSER).await.unwrap(), Some("chrome".to_string()));
+        assert_eq!(
+            db.get_setting(COOKIES_BROWSER).await.unwrap(),
+            Some("chrome".to_string())
+        );
 
         db.clear_setting(COOKIES_BROWSER).await.unwrap();
         assert_eq!(db.get_setting(COOKIES_BROWSER).await.unwrap(), None);

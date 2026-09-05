@@ -18,16 +18,30 @@ const DEFAULT_CATEGORIES: &[(&str, &str, &[&str])] = &[
     (
         "Compressed",
         "Compressed",
-        &["7Z", "ACE", "ARJ", "BIN", "BZ2", "GZ", "GZIP", "ISO", "IMG", "LZH", "R0*", "R1*", "RAR", "SEA", "SIT", "SITX", "TAR", "Z", "ZIP"],
+        &[
+            "7Z", "ACE", "ARJ", "BIN", "BZ2", "GZ", "GZIP", "ISO", "IMG", "LZH", "R0*", "R1*",
+            "RAR", "SEA", "SIT", "SITX", "TAR", "Z", "ZIP",
+        ],
     ),
     ("Programs", "Programs", &["APK", "EXE", "MSI", "MSU"]),
     (
         "Video",
         "Video",
-        &["3GP", "ASF", "AVI", "M4V", "MKV", "MOV", "MPE", "MPEG", "MPG", "OGV", "QT", "RM", "RMVB", "WMV"],
+        &[
+            "3GP", "ASF", "AVI", "M4V", "MKV", "MOV", "MPE", "MPEG", "MPG", "OGV", "QT", "RM",
+            "RMVB", "WMV",
+        ],
     ),
-    ("Music", "Music", &["AAC", "AIF", "M4A", "MP3", "MPA", "OGG", "RA", "WAV", "WMA"]),
-    ("Documents", "Documents", &["PDF", "PLJ", "PPS", "PPT", "TIF", "TIFF"]),
+    (
+        "Music",
+        "Music",
+        &["AAC", "AIF", "M4A", "MP3", "MPA", "OGG", "RA", "WAV", "WMA"],
+    ),
+    (
+        "Documents",
+        "Documents",
+        &["PDF", "PLJ", "PPS", "PPT", "TIF", "TIFF"],
+    ),
 ];
 
 const SCHEMA: &str = r#"
@@ -45,8 +59,12 @@ CREATE TABLE IF NOT EXISTS downloads (
     retry_count     INTEGER NOT NULL DEFAULT 0,
     error_message   TEXT,
     allow_playlist  INTEGER NOT NULL DEFAULT 0,
+    video_quality   INTEGER,
+    actual_video_quality INTEGER,
     title           TEXT,
-    thumbnail_url   TEXT
+    thumbnail_url   TEXT,
+    playlist_group TEXT,
+    playlist_title TEXT
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -84,13 +102,22 @@ impl Db {
             // already-created table, so add them here instead. Errors are
             // ignored since they mean the column is already there.
             let _ = conn.execute("ALTER TABLE downloads ADD COLUMN title TEXT", []);
+            let _ = conn.execute("ALTER TABLE downloads ADD COLUMN playlist_group TEXT", []);
+            let _ = conn.execute("ALTER TABLE downloads ADD COLUMN playlist_title TEXT", []);
             let _ = conn.execute("ALTER TABLE downloads ADD COLUMN thumbnail_url TEXT", []);
+            let _ = conn.execute("ALTER TABLE downloads ADD COLUMN video_quality INTEGER", []);
+            let _ = conn.execute(
+                "ALTER TABLE downloads ADD COLUMN actual_video_quality INTEGER",
+                [],
+            );
             Ok(conn)
         })
         .await
         .map_err(|_| crate::error::CoreError::Join)??;
 
-        let db = Db { conn: Arc::new(Mutex::new(conn)) };
+        let db = Db {
+            conn: Arc::new(Mutex::new(conn)),
+        };
         db.seed_default_categories().await?;
         Ok(db)
     }
@@ -98,7 +125,9 @@ impl Db {
     pub async fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(SCHEMA)?;
-        let db = Db { conn: Arc::new(Mutex::new(conn)) };
+        let db = Db {
+            conn: Arc::new(Mutex::new(conn)),
+        };
         db.seed_default_categories().await?;
         Ok(db)
     }

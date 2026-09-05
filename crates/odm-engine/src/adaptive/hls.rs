@@ -8,12 +8,19 @@ use std::path::{Path, PathBuf};
 /// Picks the highest-bandwidth variant when given a master playlist, fetches
 /// every media segment through the shared HTTP client, then remuxes with
 /// ffmpeg (stream copy, no re-encode).
-pub async fn download_hls(client: &reqwest::Client, playlist_url: &str, dest: &Path) -> Result<PathBuf> {
+pub async fn download_hls(
+    client: &reqwest::Client,
+    playlist_url: &str,
+    dest: &Path,
+) -> Result<PathBuf> {
     let media_url = resolve_media_playlist_url(client, playlist_url).await?;
     let (bytes, base_url) = fetch_playlist(client, &media_url).await?;
 
-    let playlist = m3u8_rs::parse_playlist_res(&bytes)
-        .map_err(|e| EngineError::Io(std::io::Error::other(format!("invalid HLS media playlist: {e:?}"))))?;
+    let playlist = m3u8_rs::parse_playlist_res(&bytes).map_err(|e| {
+        EngineError::Io(std::io::Error::other(format!(
+            "invalid HLS media playlist: {e:?}"
+        )))
+    })?;
 
     let media = match playlist {
         Playlist::MediaPlaylist(m) => m,
@@ -39,7 +46,9 @@ pub async fn download_hls(client: &reqwest::Client, playlist_url: &str, dest: &P
         .collect();
 
     if specs.is_empty() {
-        return Err(EngineError::Io(std::io::Error::other("HLS playlist has no segments")));
+        return Err(EngineError::Io(std::io::Error::other(
+            "HLS playlist has no segments",
+        )));
     }
 
     let segment_paths = fetch_segments(client, specs).await?;
@@ -54,10 +63,16 @@ pub async fn download_hls(client: &reqwest::Client, playlist_url: &str, dest: &P
 /// If `playlist_url` is a master playlist, resolves it to the highest-bandwidth
 /// variant's media playlist URL; if it's already a media playlist, returns it
 /// unchanged.
-async fn resolve_media_playlist_url(client: &reqwest::Client, playlist_url: &str) -> Result<String> {
+async fn resolve_media_playlist_url(
+    client: &reqwest::Client,
+    playlist_url: &str,
+) -> Result<String> {
     let (bytes, base_url) = fetch_playlist(client, playlist_url).await?;
-    let playlist = m3u8_rs::parse_playlist_res(&bytes)
-        .map_err(|e| EngineError::Io(std::io::Error::other(format!("invalid HLS playlist: {e:?}"))))?;
+    let playlist = m3u8_rs::parse_playlist_res(&bytes).map_err(|e| {
+        EngineError::Io(std::io::Error::other(format!(
+            "invalid HLS playlist: {e:?}"
+        )))
+    })?;
 
     match playlist {
         Playlist::MediaPlaylist(_) => Ok(playlist_url.to_string()),
@@ -66,7 +81,9 @@ async fn resolve_media_playlist_url(client: &reqwest::Client, playlist_url: &str
                 .variants
                 .iter()
                 .max_by_key(|v| v.bandwidth)
-                .ok_or_else(|| EngineError::Io(std::io::Error::other("master playlist has no variants")))?;
+                .ok_or_else(|| {
+                    EngineError::Io(std::io::Error::other("master playlist has no variants"))
+                })?;
             Ok(resolve_url(&base_url, &best.uri))
         }
     }

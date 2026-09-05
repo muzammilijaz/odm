@@ -21,7 +21,10 @@ const MAX_CONCURRENT_SEGMENTS: usize = 6;
 /// Downloads every segment (bounded concurrency, each with its own small retry
 /// loop) into its target path, returning the destination paths in the same
 /// order they were given — i.e. playback order.
-pub async fn fetch_segments(client: &reqwest::Client, specs: Vec<SegmentSpec>) -> Result<Vec<PathBuf>> {
+pub async fn fetch_segments(
+    client: &reqwest::Client,
+    specs: Vec<SegmentSpec>,
+) -> Result<Vec<PathBuf>> {
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_SEGMENTS));
     let dests: Vec<PathBuf> = specs.iter().map(|s| s.dest.clone()).collect();
 

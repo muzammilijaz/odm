@@ -23,7 +23,9 @@ async fn downloads_full_file_with_ranged_chunks() {
     let dir = tempdir().unwrap();
     let dest = dir.path().join("out.bin");
 
-    let handle = download(format!("{base}/file/50000"), &dest, small_config()).await.unwrap();
+    let handle = download(format!("{base}/file/50000"), &dest, small_config())
+        .await
+        .unwrap();
     let path = handle.wait().await.unwrap();
 
     let bytes = tokio::fs::read(&path).await.unwrap();
@@ -36,7 +38,9 @@ async fn downloads_when_server_does_not_support_range() {
     let dir = tempdir().unwrap();
     let dest = dir.path().join("out.bin");
 
-    let handle = download(format!("{base}/file-norange/20000"), &dest, small_config()).await.unwrap();
+    let handle = download(format!("{base}/file-norange/20000"), &dest, small_config())
+        .await
+        .unwrap();
     let path = handle.wait().await.unwrap();
 
     let bytes = tokio::fs::read(&path).await.unwrap();
@@ -49,7 +53,9 @@ async fn follows_redirect() {
     let dir = tempdir().unwrap();
     let dest = dir.path().join("out.bin");
 
-    let handle = download(format!("{base}/redirect/10000"), &dest, small_config()).await.unwrap();
+    let handle = download(format!("{base}/redirect/10000"), &dest, small_config())
+        .await
+        .unwrap();
     let path = handle.wait().await.unwrap();
 
     let bytes = tokio::fs::read(&path).await.unwrap();
@@ -65,7 +71,9 @@ async fn retries_past_a_transient_failure() {
     // First hit to /file-failonce returns 503; the server route only fails
     // once globally, so with parallel chunks at least one will hit it and
     // must retry into success.
-    let handle = download(format!("{base}/file-failonce/8000"), &dest, small_config()).await.unwrap();
+    let handle = download(format!("{base}/file-failonce/8000"), &dest, small_config())
+        .await
+        .unwrap();
     let path = handle.wait().await.unwrap();
 
     let bytes = tokio::fs::read(&path).await.unwrap();
@@ -78,7 +86,9 @@ async fn pause_and_resume_completes_correctly() {
     let dir = tempdir().unwrap();
     let dest = dir.path().join("out.bin");
 
-    let handle = download(format!("{base}/file/200000"), &dest, small_config()).await.unwrap();
+    let handle = download(format!("{base}/file/200000"), &dest, small_config())
+        .await
+        .unwrap();
     handle.pause();
     tokio::time::sleep(Duration::from_millis(50)).await;
     handle.resume();
@@ -94,7 +104,9 @@ async fn cancel_stops_the_download() {
     let dir = tempdir().unwrap();
     let dest = dir.path().join("out.bin");
 
-    let handle = download(format!("{base}/file/500000"), &dest, small_config()).await.unwrap();
+    let handle = download(format!("{base}/file/500000"), &dest, small_config())
+        .await
+        .unwrap();
     handle.cancel();
     let result = handle.wait().await;
 
@@ -142,7 +154,9 @@ async fn single_small_file_uses_one_chunk() {
 
     let mut config = small_config();
     config.min_chunk_size = 1_000_000; // forces single-chunk path for a tiny file
-    let handle = download(format!("{base}/file/500"), &dest, config).await.unwrap();
+    let handle = download(format!("{base}/file/500"), &dest, config)
+        .await
+        .unwrap();
     let path = handle.wait().await.unwrap();
 
     let bytes = tokio::fs::read(&path).await.unwrap();

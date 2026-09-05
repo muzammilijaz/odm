@@ -17,10 +17,7 @@ pub fn is_retryable(err: &reqwest::Error) -> bool {
         return true;
     }
     if let Some(status) = err.status() {
-        return matches!(
-            status.as_u16(),
-            408 | 425 | 429 | 500 | 502 | 503 | 504
-        );
+        return matches!(status.as_u16(), 408 | 425 | 429 | 500 | 502 | 503 | 504);
     }
     // Body-read errors (connection reset mid-stream etc.) surface without a
     // status code — treat as retryable transport faults.

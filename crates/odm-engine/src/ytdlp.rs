@@ -38,9 +38,15 @@ const KNOWN_VIDEO_HOSTS: &[&str] = &[
 ];
 
 pub fn is_known_video_site(url: &str) -> bool {
-    let Ok(parsed) = url::Url::parse(url) else { return false };
-    let Some(host) = parsed.host_str() else { return false };
-    KNOWN_VIDEO_HOSTS.iter().any(|known| host == *known || host.ends_with(&format!(".{known}")))
+    let Ok(parsed) = url::Url::parse(url) else {
+        return false;
+    };
+    let Some(host) = parsed.host_str() else {
+        return false;
+    };
+    KNOWN_VIDEO_HOSTS
+        .iter()
+        .any(|known| host == *known || host.ends_with(&format!(".{known}")))
 }
 
 /// Resolves the yt-dlp binary: an `ODM_YTDLP_PATH` override, a copy bundled
@@ -49,7 +55,11 @@ pub fn resolve_ytdlp_path() -> PathBuf {
     if let Ok(p) = std::env::var("ODM_YTDLP_PATH") {
         return PathBuf::from(p);
     }
-    let exe_name = if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" };
+    let exe_name = if cfg!(windows) {
+        "yt-dlp.exe"
+    } else {
+        "yt-dlp"
+    };
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let bundled = dir.join(exe_name);
@@ -81,7 +91,11 @@ pub fn resolve_quickjs_path() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("ODM_QUICKJS_PATH") {
         return Some(PathBuf::from(p));
     }
-    let exe_name = if cfg!(windows) { "quickjs.exe" } else { "quickjs" };
+    let exe_name = if cfg!(windows) {
+        "quickjs.exe"
+    } else {
+        "quickjs"
+    };
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
     let bundled = dir.join(exe_name);
@@ -91,11 +105,43 @@ pub fn resolve_quickjs_path() -> Option<PathBuf> {
 /// Fetches yt-dlp's metadata/format-list JSON for `url` (`yt-dlp -J`), for a
 /// future quality-picker UI. Doesn't download anything.
 pub async fn probe_formats(url: &str) -> Result<serde_json::Value> {
+    probe_formats_with_cookies(url, None, None).await
+}
+
+/// Fetch the entire flat playlist before any media download begins.
+pub async fn fetch_playlist(url: &str, cookies_file: Option<&str>, browser: Option<&str>) -> Result<serde_json::Value> {
+    let mut command = no_window_command(resolve_ytdlp_path());
+    command.kill_on_drop(true);
+    command.args(["--ignore-config", "--flat-playlist", "--yes-playlist", "--dump-single-json", "--skip-download", "--sleep-requests", "0.75", "--socket-timeout", "15", "--retries", "2"]);
+    if let Some(file) = cookies_file { command.args(["--cookies", file]); }
+    else if let Some(browser) = browser { command.args(["--cookies-from-browser", browser]); }
+    let output = tokio::time::timeout(std::time::Duration::from_secs(180), command.arg(url).output()).await
+        .map_err(|_| EngineError::Io(std::io::Error::other("Playlist fetch timed out; no videos were queued. Retry the playlist.")))??;
+    if !output.status.success() { return Err(ytdlp_error(&output.stderr, output.status)); }
+    Ok(serde_json::from_slice(&output.stdout)?)
+}
+
+async fn probe_formats_with_cookies(url: &str, cookies_file: Option<&str>, cookies_browser: Option<&str>) -> Result<serde_json::Value> {
     let ytdlp = resolve_ytdlp_path();
-    let output = no_window_command(&ytdlp)
+    let mut command = no_window_command(&ytdlp);
+    command.kill_on_drop(true);
+    command.args(["--socket-timeout", "10", "--retries", "1"]);
+    if let Some(path) = cookies_file {
+        command.args(["--cookies", path]);
+    } else if let Some(browser) = cookies_browser {
+        command.args(["--cookies-from-browser", browser]);
+    }
+    if let Some(quickjs_path) = resolve_quickjs_path() {
+        command.args([
+            "--js-runtimes",
+            &format!("quickjs:{}", quickjs_path.display()),
+        ]);
+    }
+    let output = tokio::time::timeout(std::time::Duration::from_secs(20), command
         .args(["-J", "--no-playlist", url])
-        .output()
+        .output())
         .await
+        .map_err(|_| EngineError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Video inspection timed out. Try again or check your sign-in settings.")))?
         .map_err(EngineError::Io)?;
 
     if !output.status.success() {
@@ -104,14 +150,89 @@ pub async fn probe_formats(url: &str) -> Result<serde_json::Value> {
     serde_json::from_slice(&output.stdout).map_err(EngineError::from)
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct VideoQualities {
+    /// Extractor-specific stable media ID, used to detect existing output
+    /// files even when their database rows were removed.
+    pub id: Option<String>,
+    pub title: String,
+    pub thumbnail: Option<String>,
+    /// Distinct source heights, highest first (for example 2160, 1080, 720).
+    pub heights: Vec<u32>,
+}
+
+/// Probes the source formats and excludes audio-only renditions.
+pub async fn probe_video_qualities(url: &str) -> Result<VideoQualities> {
+    let info = probe_formats(url).await?;
+    Ok(video_qualities_from_info(&info))
+}
+
+pub async fn probe_video_qualities_with_cookies(url: &str, cookies_file: Option<&str>, cookies_browser: Option<&str>) -> Result<VideoQualities> {
+    let info = probe_formats_with_cookies(url, cookies_file, cookies_browser).await?;
+    Ok(video_qualities_from_info(&info))
+}
+
+fn video_qualities_from_info(info: &serde_json::Value) -> VideoQualities {
+    let id = info.get("id").and_then(|v| v.as_str()).map(str::to_string);
+    let title = info
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("video")
+        .to_string();
+    let thumbnail = info
+        .get("thumbnail")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let mut heights: Vec<u32> = info
+        .get("formats")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .filter(|format| format.get("vcodec").and_then(|v| v.as_str()) != Some("none"))
+        .filter_map(|format| format.get("height").and_then(|v| v.as_u64()))
+        .filter(|height| *height > 0 && *height <= u32::MAX as u64)
+        .map(|height| height as u32)
+        .collect();
+    heights.sort_unstable_by(|a, b| b.cmp(a));
+    heights.dedup();
+    VideoQualities {
+        id,
+        title,
+        thumbnail,
+        heights,
+    }
+}
+
+/// Resolves the preference using exact/nearest-lower, or the nearest higher
+/// rendition only when nothing at or below the request exists.
+pub fn select_available_height(preferred: Option<u32>, heights: &[u32]) -> Option<u32> {
+    let highest = heights.iter().copied().max()?;
+    match preferred {
+        None => Some(highest),
+        Some(wanted) => heights
+            .iter()
+            .copied()
+            .filter(|height| *height <= wanted)
+            .max()
+            .or_else(|| heights.iter().copied().min()),
+    }
+}
+
 /// Fetches just a video's title and thumbnail URL upfront (built on
 /// `probe_formats`), so the UI can show the real name/preview for the whole
 /// download instead of only once the file lands and its title is derived
 /// from the actual downloaded filename.
 pub async fn probe_title_thumbnail(url: &str) -> Result<(String, Option<String>)> {
     let info = probe_formats(url).await?;
-    let title = info.get("title").and_then(|v| v.as_str()).unwrap_or("video").to_string();
-    let thumbnail = info.get("thumbnail").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let title = info
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("video")
+        .to_string();
+    let thumbnail = info
+        .get("thumbnail")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     Ok((title, thumbnail))
 }
 
@@ -124,7 +245,11 @@ pub async fn probe_title_thumbnail(url: &str) -> Result<(String, Option<String>)
 /// report of what happened ("up to date" / "updated to X" / etc).
 pub async fn update_ytdlp() -> Result<String> {
     let ytdlp = resolve_ytdlp_path();
-    let output = no_window_command(&ytdlp).arg("-U").output().await.map_err(EngineError::Io)?;
+    let output = no_window_command(&ytdlp)
+        .arg("-U")
+        .output()
+        .await
+        .map_err(EngineError::Io)?;
     if !output.status.success() {
         return Err(ytdlp_error(&output.stderr, output.status));
     }
@@ -136,11 +261,11 @@ pub async fn update_ytdlp() -> Result<String> {
 /// output path.
 pub struct YtdlpHandle {
     pub progress: watch::Receiver<Progress>,
-    join: JoinHandle<Result<PathBuf>>,
+    join: JoinHandle<Result<YtdlpOutcome>>,
 }
 
 impl YtdlpHandle {
-    pub async fn wait(self) -> Result<PathBuf> {
+    pub async fn wait(self) -> Result<YtdlpOutcome> {
         match self.join.await {
             Ok(result) => result,
             Err(_join_err) => Err(EngineError::Cancelled),
@@ -159,6 +284,14 @@ impl YtdlpHandle {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct YtdlpOutcome {
+    pub path: PathBuf,
+    /// Height reported for yt-dlp's final selected/merged format. Callers
+    /// can verify it against the completed file with ffprobe.
+    pub video_height: Option<u32>,
+}
+
 #[derive(Debug, Default, serde::Deserialize)]
 struct YtdlpProgressLine {
     downloaded_bytes: Option<f64>,
@@ -167,12 +300,20 @@ struct YtdlpProgressLine {
     speed: Option<f64>,
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct YtdlpResultLine {
+    filepath: String,
+    height: Option<u32>,
+}
+
 /// Extra per-download choices layered on yt-dlp's own defaults. Kept as one
 /// struct (rather than stacking `Option` params) since this shape of
 /// per-job options (url/playlist/cookies-from-browser/cookies-file/section)
 /// covers the real-world cases cleanly.
 #[derive(Debug, Default, Clone)]
 pub struct YtdlpOptions {
+    pub force_generic: bool,
+    pub referer: Option<String>,
     /// Selects a specific format from `probe_formats`'s output instead of
     /// yt-dlp's own best-quality default.
     pub format_id: Option<String>,
@@ -192,6 +333,15 @@ pub struct YtdlpOptions {
     /// `cookies_from_browser` when both are set. Mirrors yt-dlp's
     /// `--cookies`.
     pub cookies_file: Option<String>,
+    /// Zero for the first copy; repeated downloads of the same URL and
+    /// quality use `-1`, `-2`, ... before the extension.
+    pub copy_index: u32,
+}
+
+/// Tries the exact height and then the nearest lower rendition. It never
+/// crosses above the user's selected resolution.
+pub fn quality_format_selector(height: u32) -> String {
+    format!("bestvideo[height={height}]+bestaudio/best[height={height}]/bestvideo[height<={height}]+bestaudio/best[height<={height}]")
 }
 
 /// Downloads `url` via yt-dlp into `dest_dir` (best available quality by
@@ -209,12 +359,33 @@ pub struct YtdlpOptions {
 /// update (prefixed `download:`), read incrementally from its stdout pipe
 /// and republished as the same `Progress` type the progressive/adaptive
 /// engines use.
-pub async fn download_with_ytdlp(url: &str, dest_dir: &Path, opts: &YtdlpOptions) -> Result<YtdlpHandle> {
+pub async fn download_with_ytdlp(
+    url: &str,
+    dest_dir: &Path,
+    opts: &YtdlpOptions,
+) -> Result<YtdlpHandle> {
     tokio::fs::create_dir_all(dest_dir).await?;
     let before_entries = snapshot_dir(dest_dir).await;
 
     let ytdlp = resolve_ytdlp_path();
-    let output_template = dest_dir.join("%(title).200B [%(id)s].%(ext)s");
+    // Include the selected output height when present. Besides making files
+    // self-describing, this prevents a previous 1080p copy from making
+    // yt-dlp skip a later explicit 4K request as "already downloaded".
+    let copy_suffix = if opts.copy_index == 0 {
+        String::new()
+    } else {
+        format!("-{}", opts.copy_index)
+    };
+    let playlist_prefix = if opts.allow_playlist {
+        // Keep all entries together under the playlist title. yt-dlp sanitizes
+        // this component for the target platform.
+        "%(playlist_title|YouTube Playlist)s/"
+    } else {
+        ""
+    };
+    let output_template = dest_dir.join(format!(
+        "{playlist_prefix}%(title).200B [%(id)s]%(height& [{{}}p]|)s{copy_suffix}.%(ext)s"
+    ));
     let output_template_str = output_template.display().to_string();
 
     // yt-dlp needs its own ffmpeg location -- it has no idea our engine
@@ -231,7 +402,7 @@ pub async fn download_with_ytdlp(url: &str, dest_dir: &Path, opts: &YtdlpOptions
         "-o".into(),
         output_template_str,
         "--print".into(),
-        "after_move:filepath".into(),
+        r#"after_move:ODM_RESULT:{"filepath":%(filepath)j,"height":%(height)j}"#.into(),
         // `--print` alone silently suppresses `--progress-template`'s
         // "download" output entirely (confirmed live: with `--print` and no
         // `--progress`, the download's own progress JSON never appears on
@@ -276,12 +447,11 @@ pub async fn download_with_ytdlp(url: &str, dest_dir: &Path, opts: &YtdlpOptions
         // one consistent, universally-playable container.
         "--merge-output-format".into(),
         "mp4".into(),
-        // Prefer h264/aac (broadly compatible) over vp9/av1/opus when an
-        // equivalent-quality option exists, but fall through to whatever's
-        // actually available rather than failing when a site only offers
-        // vp9/av1 (increasingly common, e.g. many YouTube 1080p+ streams).
+        // Resolution is the primary preference; among equivalent-quality
+        // formats prefer h264/aac for broad compatibility, falling through
+        // to vp9/av1/opus when that is all the requested height provides.
         "-S".into(),
-        "vcodec:h264,acodec:aac,res,fps".into(),
+        "res,fps,vcodec:h264,acodec:aac".into(),
         // DASH/HLS-fragmented formats (the common case for these sites)
         // download noticeably faster with a few fragments in flight instead
         // of yt-dlp's serial default.
@@ -291,10 +461,28 @@ pub async fn download_with_ytdlp(url: &str, dest_dir: &Path, opts: &YtdlpOptions
         "10".into(),
         "--retry-sleep".into(),
         "linear=1:5".into(),
+        // Keep extraction/download requests polite, especially for playlists.
+        // These are yt-dlp's supported delay controls; they reduce burst
+        // traffic but cannot guarantee that a site will never rate-limit an IP.
+        "--sleep-requests".into(),
+        "0.75".into(),
+        "--sleep-interval".into(),
+        "5".into(),
+        "--max-sleep-interval".into(),
+        "10".into(),
         "--socket-timeout".into(),
         "30".into(),
     ]);
-    args.push(if opts.allow_playlist { "--yes-playlist".into() } else { "--no-playlist".into() });
+    args.push(if opts.allow_playlist {
+        "--yes-playlist".into()
+    } else {
+        "--no-playlist".into()
+    });
+    if opts.allow_playlist {
+        // Start processing entries as soon as yt-dlp discovers them instead
+        // of waiting for the whole playlist metadata pass to finish.
+        args.push("--lazy-playlist".into());
+    }
     if let Some(fmt) = &opts.format_id {
         args.push("-f".into());
         args.push(fmt.clone());
@@ -306,6 +494,8 @@ pub async fn download_with_ytdlp(url: &str, dest_dir: &Path, opts: &YtdlpOptions
         args.push("--cookies-from-browser".into());
         args.push(browser.clone());
     }
+    if opts.force_generic { args.push("--force-generic-extractor".into()); }
+    if let Some(referer) = &opts.referer { args.extend(["--referer".into(), referer.clone()]); }
     args.push(url.into());
 
     let mut child = no_window_command(&ytdlp)
@@ -346,8 +536,16 @@ pub async fn download_with_ytdlp(url: &str, dest_dir: &Path, opts: &YtdlpOptions
     let dest_dir_owned = dest_dir.to_path_buf();
 
     let join = tokio::spawn(async move {
+        // Drain both pipes concurrently; long playlists can otherwise fill
+        // stderr and block the downloader while stdout waits for more data.
+        let stderr_reader = tokio::spawn(async move {
+            let mut text = String::new();
+            let _ = BufReader::new(stderr).read_to_string(&mut text).await;
+            text
+        });
         let mut lines = BufReader::new(stdout).lines();
         let mut final_path: Option<PathBuf> = None;
+        let mut reported_height: Option<u32> = None;
 
         while let Ok(Some(line)) = lines.next_line().await {
             // `download:` in `--progress-template download:{...}` (built
@@ -362,7 +560,14 @@ pub async fn download_with_ytdlp(url: &str, dest_dir: &Path, opts: &YtdlpOptions
             // the post-download `fs::metadata` stat below ran). Dispatch on
             // whether the line actually parses as our JSON shape instead.
             let trimmed = line.trim();
-            if trimmed.starts_with('{') {
+            if let Some(result_json) = trimmed.strip_prefix("ODM_RESULT:") {
+                if let Ok(result) =
+                    serde_json::from_str::<YtdlpResultLine>(&result_json.replace(":NA", ":null"))
+                {
+                    final_path = Some(PathBuf::from(result.filepath));
+                    reported_height = result.height;
+                }
+            } else if trimmed.starts_with('{') {
                 // yt-dlp's `%()j` (json-encode) template operator prints the
                 // bare token `NA` -- not valid JSON, and not `null` either --
                 // for a field it has no value for yet (`total_bytes_estimate`
@@ -379,9 +584,14 @@ pub async fn download_with_ytdlp(url: &str, dest_dir: &Path, opts: &YtdlpOptions
                 // only ever appears as a bare value in this specific
                 // template's output, never inside a legitimate string or
                 // number, so a blind substitution is safe here.
-                if let Ok(p) = serde_json::from_str::<YtdlpProgressLine>(&trimmed.replace(":NA", ":null")) {
+                if let Ok(p) =
+                    serde_json::from_str::<YtdlpProgressLine>(&trimmed.replace(":NA", ":null"))
+                {
                     let downloaded = p.downloaded_bytes.unwrap_or(0.0).round() as u64;
-                    let total = p.total_bytes.or(p.total_bytes_estimate).map(|t| t.round() as u64);
+                    let total = p
+                        .total_bytes
+                        .or(p.total_bytes_estimate)
+                        .map(|t| t.round() as u64);
                     let _ = progress_tx.send(Progress {
                         downloaded_bytes: downloaded,
                         total_bytes: total,
@@ -389,17 +599,19 @@ pub async fn download_with_ytdlp(url: &str, dest_dir: &Path, opts: &YtdlpOptions
                         active_chunks: 1,
                     });
                 }
-            } else if !trimmed.is_empty() {
-                final_path = Some(PathBuf::from(trimmed));
             }
         }
 
-        let mut stderr_buf = String::new();
-        let _ = BufReader::new(stderr).read_to_string(&mut stderr_buf).await;
+        let stderr_buf = stderr_reader.await.unwrap_or_default();
 
         let status = child.wait().await.map_err(EngineError::Io)?;
         if !status.success() {
-            let tail: String = stderr_buf.lines().rev().take(6).collect::<Vec<_>>().join(" | ");
+            let tail: String = stderr_buf
+                .lines()
+                .rev()
+                .take(6)
+                .collect::<Vec<_>>()
+                .join(" | ");
             if stderr_buf.contains("Could not copy") && stderr_buf.contains("cookie database") {
                 // yt-dlp copies the browser's live cookie DB to read it, which
                 // fails whenever that browser still holds the file open --
@@ -419,7 +631,9 @@ pub async fn download_with_ytdlp(url: &str, dest_dir: &Path, opts: &YtdlpOptions
                     "YouTube is asking to confirm you're not a bot. Go to Settings and select a browser you're signed into YouTube with (under cookies/sign-in) so yt-dlp can use its session, then retry this download.",
                 )));
             }
-            return Err(EngineError::Io(std::io::Error::other(format!("yt-dlp exited with {status}: {tail}"))));
+            return Err(EngineError::Io(std::io::Error::other(format!(
+                "yt-dlp exited with {status}: {tail}"
+            ))));
         }
 
         // Prefer diffing the destination directory over the path yt-dlp
@@ -428,7 +642,8 @@ pub async fn download_with_ytdlp(url: &str, dest_dir: &Path, opts: &YtdlpOptions
         // at a file that doesn't exist. A before/after directory snapshot
         // sidesteps the whole stdout-encoding question entirely.
         let after_entries = snapshot_dir(&dest_dir_owned).await;
-        let mut new_entries: Vec<PathBuf> = after_entries.difference(&before_entries).cloned().collect();
+        let mut new_entries: Vec<PathBuf> =
+            after_entries.difference(&before_entries).cloned().collect();
         if new_entries.len() == 1 {
             final_path = Some(new_entries.remove(0));
         } else if let Some(p) = &final_path {
@@ -439,7 +654,11 @@ pub async fn download_with_ytdlp(url: &str, dest_dir: &Path, opts: &YtdlpOptions
             }
         }
 
-        let final_path = final_path.ok_or_else(|| EngineError::Io(std::io::Error::other("yt-dlp did not report a final file path")))?;
+        let final_path = final_path.ok_or_else(|| {
+            EngineError::Io(std::io::Error::other(
+                "yt-dlp did not report a final file path",
+            ))
+        })?;
 
         // Short/fast downloads can finish before yt-dlp ever emits a
         // progress-template line (confirmed live: a 19-second video showed
@@ -456,26 +675,41 @@ pub async fn download_with_ytdlp(url: &str, dest_dir: &Path, opts: &YtdlpOptions
             });
         }
 
-        Ok(final_path)
+        Ok(YtdlpOutcome {
+            path: final_path,
+            video_height: reported_height,
+        })
     });
 
-    Ok(YtdlpHandle { progress: progress_rx, join })
+    Ok(YtdlpHandle {
+        progress: progress_rx,
+        join,
+    })
 }
 
 fn ytdlp_error(stderr: &[u8], status: std::process::ExitStatus) -> EngineError {
     let text = String::from_utf8_lossy(stderr);
     let tail: String = text.lines().rev().take(6).collect::<Vec<_>>().join(" | ");
-    EngineError::Io(std::io::Error::other(format!("yt-dlp exited with {status}: {tail}")))
+    EngineError::Io(std::io::Error::other(format!(
+        "yt-dlp exited with {status}: {tail}"
+    )))
 }
 
-/// Full paths of every entry directly inside `dir` (non-recursive). Used to
+/// Full paths of every file below `dir`. Used to
 /// diff before/after a yt-dlp run and find the file it actually produced,
 /// independent of whatever yt-dlp printed about it.
 async fn snapshot_dir(dir: &Path) -> std::collections::HashSet<PathBuf> {
     let mut entries = std::collections::HashSet::new();
-    if let Ok(mut read_dir) = tokio::fs::read_dir(dir).await {
-        while let Ok(Some(entry)) = read_dir.next_entry().await {
-            entries.insert(entry.path());
+    let mut dirs = vec![dir.to_path_buf()];
+    while let Some(current) = dirs.pop() {
+        if let Ok(mut read_dir) = tokio::fs::read_dir(current).await {
+            while let Ok(Some(entry)) = read_dir.next_entry().await {
+                if entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
+                    dirs.push(entry.path());
+                } else {
+                    entries.insert(entry.path());
+                }
+            }
         }
     }
     entries
@@ -513,6 +747,46 @@ mod tests {
         assert!(!is_known_video_site("not a url"));
     }
 
+    #[test]
+    fn extracts_distinct_video_heights_highest_first() {
+        let info = serde_json::json!({
+            "title": "Example",
+            "formats": [
+                { "height": 720, "vcodec": "avc1" },
+                { "height": 1080, "vcodec": "vp9" },
+                { "height": 720, "vcodec": "vp9" },
+                { "vcodec": "none" },
+                { "height": 2160, "vcodec": "av1" }
+            ]
+        });
+        assert_eq!(
+            video_qualities_from_info(&info),
+            VideoQualities {
+                id: None,
+                title: "Example".into(),
+                thumbnail: None,
+                heights: vec![2160, 1080, 720]
+            }
+        );
+    }
+
+    #[test]
+    fn resolves_exact_lower_then_nearest_higher_height() {
+        let heights = [2160, 1080, 720, 480];
+        assert_eq!(select_available_height(Some(720), &heights), Some(720));
+        assert_eq!(select_available_height(Some(700), &heights), Some(480));
+        assert_eq!(select_available_height(Some(240), &heights), Some(480));
+        assert_eq!(select_available_height(None, &heights), Some(2160));
+    }
+
+    #[test]
+    fn quality_selector_never_crosses_above_the_requested_height() {
+        assert_eq!(
+            quality_format_selector(720),
+            "bestvideo[height=720]+bestaudio/best[height=720]/bestvideo[height<=720]+bestaudio/best[height<=720]"
+        );
+    }
+
     /// Isolated (no Tauri) regression test: races a real yt-dlp child
     /// process's progress feed against a plain timer reading
     /// `handle.progress.clone()`, mirroring how `TaskManager::run_ytdlp`
@@ -527,13 +801,26 @@ mod tests {
     #[ignore]
     #[tokio::test(flavor = "multi_thread")]
     async fn real_ytdlp_progress_is_observed_live() {
-        let binaries = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../desktop/src-tauri/binaries");
-        std::env::set_var("ODM_YTDLP_PATH", binaries.join("yt-dlp-x86_64-pc-windows-msvc.exe"));
-        std::env::set_var("ODM_FFMPEG_PATH", binaries.join("ffmpeg-x86_64-pc-windows-msvc.exe"));
+        let binaries = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../desktop/src-tauri/binaries");
+        std::env::set_var(
+            "ODM_YTDLP_PATH",
+            binaries.join("yt-dlp-x86_64-pc-windows-msvc.exe"),
+        );
+        std::env::set_var(
+            "ODM_FFMPEG_PATH",
+            binaries.join("ffmpeg-x86_64-pc-windows-msvc.exe"),
+        );
 
         let dest_dir = std::env::temp_dir().join("odm_repro_test");
         let opts = YtdlpOptions::default();
-        let handle = download_with_ytdlp("https://www.youtube.com/watch?v=aqz-KE-bpKQ", &dest_dir, &opts).await.unwrap();
+        let handle = download_with_ytdlp(
+            "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+            &dest_dir,
+            &opts,
+        )
+        .await
+        .unwrap();
         let mut progress_rx = handle.progress.clone();
 
         let watcher = tokio::spawn(async move {
@@ -551,6 +838,9 @@ mod tests {
         let saw_nonzero = watcher.await.unwrap();
         // Don't wait for the whole multi-minute download in a test -- once
         // we've proven (or disproven) live visibility, that's the answer.
-        assert!(saw_nonzero, "never observed a non-zero progress value while the real yt-dlp process was running");
+        assert!(
+            saw_nonzero,
+            "never observed a non-zero progress value while the real yt-dlp process was running"
+        );
     }
 }

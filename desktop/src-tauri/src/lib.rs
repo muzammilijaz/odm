@@ -1,5 +1,7 @@
 mod commands;
 mod http_api;
+#[cfg(windows)]
+mod native_messaging;
 mod state;
 
 use tauri::{
@@ -20,7 +22,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![AUTOSTART_ARG])))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec![AUTOSTART_ARG]),
+        ))
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // Launch on Windows startup by default, straight into the tray
@@ -38,7 +43,11 @@ pub fn run() {
             let tray_menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
             TrayIconBuilder::new()
-                .icon(app.default_window_icon().cloned().expect("app icon is configured in tauri.conf.json"))
+                .icon(
+                    app.default_window_icon()
+                        .cloned()
+                        .expect("app icon is configured in tauri.conf.json"),
+                )
                 .tooltip("ODM — Open Download Manager")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
@@ -53,7 +62,12 @@ pub fn run() {
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
                         let app = tray.app_handle();
                         if let Some(w) = app.get_webview_window("main") {
                             let _ = w.show();
@@ -92,18 +106,37 @@ pub fn run() {
 
             let app_handle = app.handle().clone();
             state::set_bundled_binary_env_vars(&app_handle);
+            #[cfg(windows)]
+            if let Err(error) = native_messaging::register(&app_handle) {
+                eprintln!("ODM could not register its browser native messaging host: {error}");
+            }
             tauri::async_runtime::block_on(async move {
                 let db_path = state::app_data_dir().join("odm.sqlite3");
-                let db = odm_core::Db::open(&db_path).await.expect("failed to open ODM database");
+                let db = odm_core::Db::open(&db_path)
+                    .await
+                    .expect("failed to open ODM database");
                 let config = odm_core::DownloadConfig::default();
-                let manager = odm_core::TaskManager::new(db, config, state::default_downloads_root(), 4);
+                let manager =
+                    odm_core::TaskManager::new(db, config, state::default_downloads_root(), 4);
+                if let Err(error) = manager.recover_playlist_queue().await {
+                    eprintln!("Could not recover playlist queue: {error}");
+                }
 
-                app_handle.manage(state::AppState { manager: manager.clone() });
+                app_handle.manage(state::AppState {
+                    manager: manager.clone(),
+                });
 
                 // Local loopback HTTP API — what the Phase 4 browser
                 // extension's native-messaging host forwards requests to.
                 let http_manager = manager.clone();
                 tauri::async_runtime::spawn(http_api::serve(http_manager, http_api::DEFAULT_PORT));
+
+                // Repair quality labels created by older builds from the
+                // real completed files without delaying application startup.
+                let quality_manager = manager.clone();
+                tauri::async_runtime::spawn(async move {
+                    quality_manager.refresh_completed_video_qualities().await;
+                });
 
                 // Push the queue to the frontend on a short interval rather
                 // than wiring a per-download event stream — simple and
@@ -122,6 +155,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::show_main_window,
             commands::add_download,
             commands::list_downloads,
             commands::pause_download,

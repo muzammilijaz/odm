@@ -25,8 +25,17 @@ function closeThisWindow() {
     .catch(() => {});
 }
 
+async function openMainWindow() {
+  try {
+    await api.showMainWindow();
+  } finally {
+    closeThisWindow();
+  }
+}
+
 function StartedPopup({ params }: { params: URLSearchParams }) {
   const name = params.get("name") || "Download";
+  const warning = params.get("warning") || "";
 
   useEffect(() => {
     const t = setTimeout(closeThisWindow, 5000);
@@ -34,15 +43,33 @@ function StartedPopup({ params }: { params: URLSearchParams }) {
   }, []);
 
   return (
-    <div className="popup-card popup-card--compact">
+    <div
+      className="popup-card popup-card--compact popup-card--clickable"
+      role="button"
+      tabIndex={0}
+      title="Open ODM"
+      onClick={() => void openMainWindow()}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") void openMainWindow();
+      }}
+    >
       <img src={logo} alt="" className="popup-card__logo" />
       <div className="popup-card__body">
         <div className="popup-card__title">Download started</div>
         <div className="popup-card__name" title={name}>
           {name}
         </div>
+        {warning && <div className="popup-card__warning">{warning}</div>}
       </div>
-      <button type="button" className="popup-card__close" onClick={closeThisWindow} title="Close">
+      <button
+        type="button"
+        className="popup-card__close"
+        onClick={(event) => {
+          event.stopPropagation();
+          closeThisWindow();
+        }}
+        title="Close"
+      >
         ×
       </button>
     </div>
@@ -79,6 +106,7 @@ function CompletePopup({ params }: { params: URLSearchParams }) {
   const totalBytes = Number(params.get("totalBytes") || 0);
   const thumbBg = params.get("thumbBg") || "#64748b";
   const thumbIcon = params.get("thumbIcon") || "📦";
+  const fallback = params.get("fallback") || "";
   const [dontShowAgain, setDontShowAgain] = useState(false);
 
   function close() {
@@ -106,6 +134,8 @@ function CompletePopup({ params }: { params: URLSearchParams }) {
           <div className="muted">{totalBytes ? `Downloaded ${formatBytes(totalBytes)}` : "Download complete"}</div>
         </div>
       </div>
+
+      {fallback && <div className="quality-fallback-notice">{fallback}</div>}
 
       <label className="modal__label">Address</label>
       <input type="text" readOnly value={url} onFocus={(e) => e.currentTarget.select()} />

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
@@ -47,6 +47,59 @@ function compareVersions(a: string, b: string): number {
 const UPDATE_REPO = "muzammilijaz/odm";
 const CHROME_EXTENSION_URL = "https://chromewebstore.google.com/detail/odm-open-download-manager/lfpiggopnkjdgedghgapjnmijgckebkd";
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+const VIDEO_QUALITY_OPTIONS = [
+  { value: "best", label: "Best available" },
+  { value: "2160", label: "2160p (4K)" },
+  { value: "1440", label: "1440p (2K)" },
+  { value: "1080", label: "1080p (Full HD)" },
+  { value: "720", label: "720p (HD)" },
+  { value: "480", label: "480p" },
+  { value: "360", label: "360p" },
+  { value: "240", label: "240p" },
+  { value: "144", label: "144p" },
+] as const;
+
+function qualityLabel(height: number | null): string {
+  if (!height) return "Best";
+  if (height === 2160) return "2160p (4K)";
+  if (height === 1440) return "1440p (2K)";
+  return `${height}p`;
+}
+
+function taskQualityLabel(task: Task): string {
+  return qualityLabel(task.actual_video_quality ?? task.video_quality);
+}
+
+function compactQualityLabel(height: number): string {
+  if (height === 2160) return "4K";
+  if (height === 1440) return "2K";
+  return `${height}p`;
+}
+
+function qualityFallbackMessage(task: Task): string | null {
+  if (!task.video_quality || !task.actual_video_quality || task.video_quality === task.actual_video_quality) return null;
+  return `${compactQualityLabel(task.video_quality)} not available — downloaded in ${compactQualityLabel(task.actual_video_quality)}`;
+}
+
+function sendClickableStartedNotification(body: string) {
+  try {
+    const notification = new window.Notification("Download started", { body, icon: logo });
+    notification.onclick = () => {
+      void api.showMainWindow();
+      notification.close();
+    };
+  } catch {
+    // Some platforms expose notifications only through Tauri's wrapper. The
+    // custom ODM popup remains clickable on those platforms.
+    sendNotification({ title: "Download started", body });
+  }
+}
+
+function looksAutoRenamed(path: string): boolean {
+  const filename = path.split(/[\\/]/).pop() || "";
+  return /-\d+(?=\.[^.]+$|$)/.test(filename);
+}
 
 /** Polls the GitHub Releases API for a newer tag than the running app's
  * version. Silent on any failure (offline, rate-limited) -- this is a
@@ -282,7 +335,7 @@ function thumbFor(category: string | null) {
 type PopupType = "started" | "complete" | "failed";
 
 const POPUP_SIZE: Record<PopupType, { width: number; height: number }> = {
-  started: { width: 380, height: 96 },
+  started: { width: 380, height: 112 },
   failed: { width: 380, height: 110 },
   complete: { width: 420, height: 410 },
 };
@@ -545,7 +598,7 @@ function StatusPill({ task }: { task: TaskWithSpeed }) {
             <div className={`progress__bar progress__bar--${task.status.toLowerCase()}`} style={{ width: `${pct ?? 0}%` }} />
           )}
         </div>
-        <span className="status-progress__pct">{indeterminate ? "…" : `${pct}%`}</span>
+        <span className="status-progress__pct">{pct === null ? (indeterminate ? "…" : "—") : `${pct}%`}</span>
       </div>
       <span className={task.status === "Paused" ? "status-progress__caption status-progress__caption--paused" : "status-progress__caption"}>
         {task.status}
@@ -722,7 +775,7 @@ function DownloadTableRow({
   const thumb = thumbFor(task.category);
 
   return (
-    <tr className={selected ? "row--selected" : undefined} onClick={onSelect} onContextMenu={(e) => onContextMenu(e, task)}>
+    <tr className={`${selected ? "row--selected" : ""} ${task.playlist_group && task.status !== "Completed" ? "playlist-pending" : ""}`} onClick={onSelect} onContextMenu={(e) => onContextMenu(e, task)}>
       <td className="col-name">
         {task.thumbnail_url ? (
           <img className="thumb thumb--image" src={task.thumbnail_url} alt="" />
@@ -735,7 +788,14 @@ function DownloadTableRow({
           <div className="row-name" title={task.url}>
             {displayNameOf(task)}
           </div>
+          {qualityFallbackMessage(task) && <div className="quality-fallback">{qualityFallbackMessage(task)}</div>}
         </div>
+      </td>
+      <td
+        className="col-quality"
+        title={task.actual_video_quality && task.video_quality && task.actual_video_quality !== task.video_quality ? `${task.video_quality}p preferred; ${task.actual_video_quality}p selected` : undefined}
+      >
+        {isKnownVideoUrl(task.url) ? taskQualityLabel(task) : "—"}
       </td>
       <td className="col-size">{task.total_bytes ? formatBytes(task.total_bytes) : "—"}</td>
       <td className="col-status">
@@ -818,6 +878,24 @@ function RightDetailsPanel({
             <span className="details-grid__wrap">{task.url}</span>
             <span>Size:</span>
             <span>{task.total_bytes ? formatBytes(task.total_bytes) : "—"}</span>
+            {isKnownVideoUrl(task.url) && (
+              <>
+                <span>Downloaded quality:</span>
+                <span>{task.actual_video_quality ? qualityLabel(task.actual_video_quality) : taskQualityLabel(task)}</span>
+                {task.video_quality && (
+                  <>
+                    <span>Requested quality:</span>
+                    <span>{qualityLabel(task.video_quality)}</span>
+                  </>
+                )}
+                {qualityFallbackMessage(task) && (
+                  <>
+                    <span>Fallback:</span>
+                    <span className="quality-fallback">{qualityFallbackMessage(task)}</span>
+                  </>
+                )}
+              </>
+            )}
             <span>Downloaded:</span>
             <span>
               {formatBytes(task.downloaded_bytes)}
@@ -934,10 +1012,14 @@ function AddDownloadModal({
   const [url, setUrl] = useState(initialUrl || "");
   const [filename, setFilename] = useState("");
   const [playlist, setPlaylist] = useState(false);
+  const [quality, setQuality] = useState("default");
   const [categoryName, setCategoryName] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const isVideoSite = isKnownVideoUrl(url);
+  const urls = url.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+  const primaryUrl = urls[0] || "";
+  const isVideoSite = isKnownVideoUrl(primaryUrl);
+  const looksLikePlaylist = /(?:[?&]list=|\/playlist(?:\/|$))/i.test(primaryUrl);
   const guessed = useMemo(() => guessCategory(url, categories), [url, categories]);
   const selectedCategory = categories.find((c) => c.name === categoryName) || guessed;
 
@@ -945,17 +1027,34 @@ function AddDownloadModal({
     if (guessed && !categoryName) setCategoryName(guessed.name);
   }, [guessed, categoryName]);
 
+  useEffect(() => {
+    // Pasting a YouTube playlist link opts into the explicit playlist mode;
+    // users can still turn it off before submitting.
+    if (looksLikePlaylist) setPlaylist(true);
+  }, [looksLikePlaylist]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!url.trim()) return;
+    if (!url.trim() || busy) return;
     setBusy(true);
     setError(null);
+    let added = 0;
     try {
-      await api.addDownload(url.trim(), filename.trim() || undefined, playlist);
+      // Submit each pasted URL in order so a bulk paste becomes a queue of
+      // independent tasks. A playlist URL remains one yt-dlp task that
+      // processes its entries sequentially.
+      for (const item of urls) {
+        await api.addDownload(item, filename.trim() || undefined, playlist && isKnownVideoUrl(item), quality);
+        added++;
+      }
       onAdded();
       onClose();
     } catch (err) {
-      setError(String(err));
+      // Retry only the failed and unsubmitted URLs, never the entries that
+      // have already been accepted into the queue.
+      setUrl(urls.slice(added).join("\n"));
+      if (added > 0) onAdded();
+      setError(`${added > 0 ? `${added} link(s) added. Remaining links kept for retry. ` : ""}${String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -972,19 +1071,41 @@ function AddDownloadModal({
         </div>
 
         <label className="modal__label">Enter URL</label>
-        <input type="url" autoFocus required placeholder="https://example.com/video.mp4" value={url} onChange={(e) => setUrl(e.currentTarget.value)} />
+        <textarea className="modal__url-list" autoFocus required rows={3} placeholder="Paste a link — or many, one per line. YouTube, Facebook, Instagram, TikTok." value={url} onChange={(e) => setUrl(e.currentTarget.value)} />
 
         {isVideoSite ? (
-          <label className="modal__checkbox">
-            <input type="checkbox" checked={playlist} onChange={(e) => setPlaylist(e.currentTarget.checked)} />
-            Download entire playlist (if this is a playlist URL)
-          </label>
+          <>
+            <label className="modal__label">Video quality</label>
+            <select className="toolbar__select" value={quality} onChange={(e) => setQuality(e.currentTarget.value)}>
+              <option value="default">Use default from Settings</option>
+              {VIDEO_QUALITY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <div className="category__folder">Exact resolution is preferred; ODM falls back automatically if it is unavailable.</div>
+          </>
         ) : (
           <>
             <label className="modal__label">File name (optional)</label>
             <input type="text" placeholder="Filename will be detected automatically" value={filename} onChange={(e) => setFilename(e.currentTarget.value)} />
           </>
         )}
+
+        <label className="modal__checkbox" title={isVideoSite ? undefined : "Paste a YouTube playlist URL to enable this option"}>
+          <input
+            type="checkbox"
+            checked={playlist}
+            disabled={!isVideoSite}
+            onChange={(e) => setPlaylist(e.currentTarget.checked)}
+          />
+          Download entire YouTube playlist
+        </label>
+        {isVideoSite && <div className="category__folder">We support YouTube playlist downloads. Paste a playlist URL to queue the complete playlist.</div>}
+        {playlist && isVideoSite && <div className="category__folder">Each video is queued at the selected quality. ODM adds a short delay between requests to reduce burst traffic.</div>}
+        {playlist && isVideoSite && <><label className="modal__label">Playlist folder name (optional)</label><input value={filename} onChange={e => setFilename(e.currentTarget.value)} placeholder="Use playlist title" /></>}
+        {urls.length > 1 && <div className="category__folder">{urls.length} links will be added to the queue in order.</div>}
 
         {showDetails && (
           <div className="download-details">
@@ -1023,7 +1144,7 @@ function AddDownloadModal({
             Cancel
           </button>
           <button type="submit" className="btn btn--primary" disabled={busy}>
-            {busy ? "Starting…" : "Start Download"}
+            {busy ? (playlist ? "Fetching playlist videos…" : "Adding links…") : "Start Download"}
           </button>
         </div>
       </form>
@@ -1075,10 +1196,12 @@ function AboutModal({ onClose, version }: { onClose: () => void; version: string
 
 function DeleteConfirmModal({
   count,
+  playlistTitle,
   onCancel,
   onConfirm,
 }: {
   count: number;
+  playlistTitle?: string;
   onCancel: () => void;
   onConfirm: (deleteFile: boolean) => void;
 }) {
@@ -1089,16 +1212,18 @@ function DeleteConfirmModal({
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal modal--delete" onClick={(e) => e.stopPropagation()}>
         <div className="modal__header">
-          <h2>Delete {plural ? `${count} downloads` : "download"}?</h2>
+          <h2>{playlistTitle ? `Delete playlist “${playlistTitle}”?` : `Delete ${plural ? `${count} downloads` : "download"}?`}</h2>
           <button type="button" className="modal__close" onClick={onCancel}>
             ×
           </button>
         </div>
         <p className="muted">This removes {plural ? "these downloads" : "this download"} from ODM's list.</p>
+        {playlistTitle && <p className="muted">All {count} playlist entries will be removed, including hidden entries. Files stay on your PC unless you select the option below.</p>}
         <label className="modal__checkbox">
           <input type="checkbox" checked={deleteFile} onChange={(e) => setDeleteFile(e.currentTarget.checked)} />
           Also delete the file{plural ? "s" : ""} from my PC
         </label>
+        {playlistTitle && deleteFile && <p className="muted">Downloaded files are permanently deleted. The playlist folder is removed when empty; any other files in it are kept.</p>}
         <div className="modal__footer">
           <button type="button" className="btn" onClick={onCancel}>
             Cancel
@@ -1125,6 +1250,70 @@ const BROWSER_OPTIONS = [
   { label: "Chromium", value: "chromium" },
   { label: "Whale", value: "whale" },
 ];
+
+function VideoQualitySetting() {
+  const [quality, setQuality] = useState("best");
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api
+      .getSetting("video_quality")
+      .then((value) => setQuality(value || "best"))
+      .catch((error) => setError(`Could not load video quality: ${String(error)}`))
+      .finally(() => setLoaded(true));
+  }, []);
+
+  if (!loaded) return null;
+
+  return (
+    <div className="category">
+      <div className="category__header">
+        <strong>Default video quality</strong>
+        <select
+          className="toolbar__select"
+          value={quality}
+          disabled={saving}
+          onChange={async (event) => {
+            const value = event.currentTarget.value;
+            setSaving(true);
+            try {
+              await api.setSetting("video_quality", value);
+              setQuality(value);
+              setError("");
+            } catch (error) {
+              setError(`Could not save video quality: ${String(error)}`);
+            } finally { setSaving(false); }
+          }}
+        >
+          {VIDEO_QUALITY_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="category__folder">
+        ODM first tries this resolution. If it is unavailable, it uses the nearest lower resolution, then the best format the site provides.
+      </div>
+      {error && <div className="form-error">{error}</div>}
+    </div>
+  );
+}
+
+function PlaylistQueueSetting() {
+  const [value, setValue] = useState("1");
+  const [error, setError] = useState("");
+  useEffect(() => { api.getSetting("playlist_concurrent").then(v => setValue(v || "1")).catch(e => setError(String(e))); }, []);
+  return <div className="category"><div className="category__header">
+    <strong>Simultaneous playlist downloads</strong>
+    <select className="toolbar__select" value={value} onChange={async e => {
+      const next = e.currentTarget.value;
+      try { await api.setSetting("playlist_concurrent", next); setValue(next); setError(""); } catch(e) { setError(String(e)); }
+    }}>{[1,2,3,4].map(n => <option key={n} value={String(n)}>{n === 1 ? "1 — one at a time" : n}</option>)}</select>
+  </div><div className="category__folder">Applies to newly added playlists. Downloads include a short delay between requests.</div>{error && <div className="form-error">{error}</div>}</div>;
+}
 
 function CookiesSetting() {
   const [browser, setBrowser] = useState("");
@@ -1252,6 +1441,12 @@ function CategoriesPanel({
       <section className="settings-section">
         <h2 className="settings-section__title">Notifications</h2>
         <NotificationSettings prefs={notifyPrefs} setPref={onSetNotifyPref} loaded={notifyPrefsLoaded} />
+      </section>
+
+      <section className="settings-section">
+        <h2 className="settings-section__title">Video quality</h2>
+        <VideoQualitySetting />
+        <PlaylistQueueSetting />
       </section>
 
       <section className="settings-section">
@@ -1444,6 +1639,7 @@ function Sidebar({
 }
 
 function App() {
+  const [collapsedPlaylists, setCollapsedPlaylists] = useState<Set<string>>(new Set());
   const [tasks, setTasks] = useState<Task[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [showSettings, setShowSettings] = useState(false);
@@ -1453,6 +1649,7 @@ function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; task: TaskWithSpeed } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TaskWithSpeed[] | null>(null);
+  const [deletePlaylistTitle, setDeletePlaylistTitle] = useState<string | undefined>();
   const [statusTab, setStatusTab] = useState<TaskStatus | "All">("All");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("added-desc");
@@ -1535,12 +1732,18 @@ function App() {
         // resume (that's not really a "start" from the user's perspective).
         const started = task.status === "Downloading" && (!before || (before.status !== "Downloading" && before.status !== "Paused"));
         if (started && notifyPrefsRef.current.start) {
-          sendNotification({ title: "Download started", body: displayNameOf(task) });
-          spawnPopup("started", { name: displayNameOf(task) });
+          const repeated =
+            looksAutoRenamed(task.dest_path) ||
+            tasksRef.current.some((existing) => existing.id !== task.id && existing.url === task.url);
+          const warning = repeated ? "Already downloaded — saving as a renamed copy" : "";
+          sendClickableStartedNotification(displayNameOf(task));
+          spawnPopup("started", { name: displayNameOf(task), warning });
+          if (repeated) pushToast({ kind: "error", title: warning });
         }
 
         if (before && before.status !== task.status) {
           if (task.status === "Completed") {
+            const fallback = qualityFallbackMessage(task);
             if (dialogPrefsRef.current.showCompleteDialog) {
               const thumb = thumbFor(task.category);
               spawnPopup("complete", {
@@ -1550,12 +1753,13 @@ function App() {
                 totalBytes: String(task.total_bytes || 0),
                 thumbBg: thumb.bg,
                 thumbIcon: thumb.icon,
+                fallback: fallback || "",
               });
             } else {
-              pushToast({ kind: "success", title: `${displayNameOf(task)} completed`, destPath: task.dest_path });
+              pushToast({ kind: "success", title: fallback || `${displayNameOf(task)} completed`, destPath: task.dest_path });
             }
             if (notifyPrefsRef.current.complete) {
-              sendNotification({ title: "Download completed", body: displayNameOf(task) });
+              sendNotification({ title: "Download completed", body: fallback ? `${displayNameOf(task)} — ${fallback}` : displayNameOf(task) });
             }
           } else if (task.status === "Failed") {
             pushToast({ kind: "error", title: `${displayNameOf(task)} failed — ${task.error_message || "connection interrupted"}` });
@@ -1636,7 +1840,7 @@ function App() {
 
   async function handleRedownload(task: TaskWithSpeed) {
     try {
-      await api.addDownload(task.url);
+      await api.addDownload(task.url, undefined, task.allow_playlist, task.video_quality ? String(task.video_quality) : "best");
       await refreshTasks();
     } catch (err) {
       pushToast({ kind: "error", title: `Redownload failed — ${String(err)}` });
@@ -1646,9 +1850,17 @@ function App() {
   async function handleDeleteConfirm(deleteFile: boolean) {
     const targets = deleteTarget || [];
     setDeleteTarget(null);
+    setDeletePlaylistTitle(undefined);
+    const errors: string[] = [];
+    // Stop the whole group first so queued entries cannot start while its
+    // earlier rows are being removed.
     for (const t of targets) {
-      await api.deleteDownload(t.id, deleteFile).catch(() => {});
+      try { await api.cancelDownload(t.id); } catch (err) { errors.push(String(err)); }
     }
+    for (const t of targets) {
+      try { await api.deleteDownload(t.id, deleteFile); } catch (err) { errors.push(String(err)); }
+    }
+    if (errors.length) pushToast({ kind: "error", title: `Some items could not be deleted: ${errors[0]}` });
     if (selectedId && targets.some((t) => t.id === selectedId)) setSelectedId(null);
     await refreshTasks();
   }
@@ -1774,6 +1986,7 @@ function App() {
                     <thead>
                       <tr>
                         <th className="col-name">Name</th>
+                        <th className="col-quality">Quality</th>
                         <th className="col-size">Size</th>
                         <th className="col-status">Status</th>
                         <th className="col-speed">Speed</th>
@@ -1784,7 +1997,7 @@ function App() {
                     <tbody>
                       {visibleTasks.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="empty">
+                          <td colSpan={7} className="empty">
                             {tasks.length === 0 ? (
                               <>
                                 <img src={logo} alt="" className="empty__icon-logo" />
@@ -1806,7 +2019,7 @@ function App() {
                           </td>
                         </tr>
                       )}
-                      {visibleTasks.map((task) => (
+                      {visibleTasks.filter(task => !task.playlist_group).map((task) => (
                         <DownloadTableRow
                           key={task.id}
                           task={task}
@@ -1819,6 +2032,31 @@ function App() {
                           }}
                         />
                       ))}
+                      {[...new Set(visibleTasks.map(task => task.playlist_group).filter((group): group is string => Boolean(group)))].map(group => {
+                        const all = tasks.filter(task => task.playlist_group === group);
+                        const completed = all.filter(task => task.status === "Completed").length;
+                        const queued = all.filter(task => task.status === "Queued").length;
+                        const failed = all.filter(task => task.status === "Failed").length;
+                        const downloading = all.filter(task => task.status === "Downloading").length;
+                        const collapsed = collapsedPlaylists.has(group);
+                        return <Fragment key={group}>
+                          <tr className="playlist-group"><td colSpan={7}>
+                            <button type="button" className="btn" aria-expanded={!collapsed} onClick={() => setCollapsedPlaylists(previous => {
+                              const next = new Set(previous); if (next.has(group)) next.delete(group); else next.add(group); return next;
+                            })}>{collapsed ? "▸" : "▾"} 📁 {all[0]?.playlist_title || "YouTube Playlist"}</button>
+                            <span> {completed}/{all.length} completed · {all.length - completed} remaining · {queued} queued · {downloading} downloading{failed > 0 ? ` · ${failed} failed` : ""}</span>
+                            <button type="button" className="btn btn--danger playlist-delete" onClick={() => {
+                              setDeletePlaylistTitle(all[0]?.playlist_title || "YouTube Playlist");
+                              setDeleteTarget(tasksWithSpeed.filter(task => task.playlist_group === group));
+                            }}>Delete playlist</button>
+                          </td></tr>
+                          {!collapsed && visibleTasks.filter(task => task.playlist_group === group).sort((a,b) => a.id-b.id).map(task => <DownloadTableRow
+                            key={task.id} task={task} selected={task.id === selectedId}
+                            onSelect={() => setSelectedId(task.id === selectedId ? null : task.id)} menu={rowMenu}
+                            onContextMenu={(e,t) => { e.preventDefault(); setContextMenu({x:e.clientX,y:e.clientY,task:t}); }}
+                          />)}
+                        </Fragment>;
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1858,7 +2096,7 @@ function App() {
       )}
 
       {deleteTarget && (
-        <DeleteConfirmModal count={deleteTarget.length} onCancel={() => setDeleteTarget(null)} onConfirm={handleDeleteConfirm} />
+        <DeleteConfirmModal count={deleteTarget.length} playlistTitle={deletePlaylistTitle} onCancel={() => { setDeleteTarget(null); setDeletePlaylistTitle(undefined); }} onConfirm={handleDeleteConfirm} />
       )}
 
       <ToastStack toasts={toasts} onDismiss={(id) => setToasts((ts) => ts.filter((t) => t.id !== id))} />

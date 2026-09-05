@@ -31,7 +31,11 @@ pub async fn detect_stream_kind(client: &reqwest::Client, url: &str) -> Result<O
 
     let resp = client.head(url).send().await;
     if let Ok(resp) = resp {
-        if let Some(ct) = resp.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()) {
+        if let Some(ct) = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+        {
             if ct.contains("mpegurl") {
                 return Ok(Some(StreamKind::Hls));
             }
@@ -46,7 +50,12 @@ pub async fn detect_stream_kind(client: &reqwest::Client, url: &str) -> Result<O
 
 /// Downloads an HLS or DASH stream to `dest`, given an already-built client
 /// (so proxy/cookie/header config from `DownloadConfig` carries through).
-pub async fn download_adaptive(client: &reqwest::Client, url: &str, dest: impl AsRef<Path>, kind: StreamKind) -> Result<PathBuf> {
+pub async fn download_adaptive(
+    client: &reqwest::Client,
+    url: &str,
+    dest: impl AsRef<Path>,
+    kind: StreamKind,
+) -> Result<PathBuf> {
     let dest = dest.as_ref();
     if let Some(parent) = dest.parent() {
         if !parent.as_os_str().is_empty() {

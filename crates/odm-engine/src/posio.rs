@@ -21,7 +21,10 @@ pub fn write_all_at(file: &File, mut buf: &[u8], mut offset: u64) -> io::Result<
     while !buf.is_empty() {
         let n = write_at(file, buf, offset)?;
         if n == 0 {
-            return Err(io::Error::new(io::ErrorKind::WriteZero, "write_at wrote 0 bytes"));
+            return Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                "write_at wrote 0 bytes",
+            ));
         }
         buf = &buf[n..];
         offset += n as u64;

@@ -27,6 +27,19 @@ foreach ($item in $include) {
     Copy-Item (Join-Path $root $item) (Join-Path $stagingDir $item) -Recurse
 }
 
+# The public key pins a stable ID when the source folder is loaded unpacked
+# during development. Chrome Web Store assigns the published ID itself, so
+# strip the development-only field from the upload manifest.
+$stagedManifestPath = Join-Path $stagingDir "manifest.json"
+$stagedManifest = Get-Content $stagedManifestPath -Raw | ConvertFrom-Json
+$stagedManifest.PSObject.Properties.Remove("key")
+$manifestJson = $stagedManifest | ConvertTo-Json -Depth 10
+[System.IO.File]::WriteAllText(
+    $stagedManifestPath,
+    $manifestJson,
+    [System.Text.UTF8Encoding]::new($false)
+)
+
 Compress-Archive -Path (Join-Path $stagingDir "*") -DestinationPath $outZip
 Remove-Item $stagingDir -Recurse -Force
 

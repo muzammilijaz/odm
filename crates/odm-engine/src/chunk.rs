@@ -31,7 +31,12 @@ impl Chunk {
 /// Split `total_size` bytes into up to `chunk_count` chunks, honoring `min_chunk_size`.
 /// Degrades to a single chunk when the file is small or ranged requests aren't
 /// supported.
-pub fn plan_chunks(total_size: u64, chunk_count: usize, min_chunk_size: u64, supports_range: bool) -> Vec<Chunk> {
+pub fn plan_chunks(
+    total_size: u64,
+    chunk_count: usize,
+    min_chunk_size: u64,
+    supports_range: bool,
+) -> Vec<Chunk> {
     if total_size == 0 || !supports_range || chunk_count <= 1 {
         return vec![Chunk {
             index: 0,

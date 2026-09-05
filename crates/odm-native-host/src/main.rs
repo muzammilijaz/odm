@@ -51,7 +51,10 @@ fn read_message<R: Read>(reader: &mut R) -> io::Result<Option<Value>> {
     // Native Messaging caps individual messages at 1 MiB from the browser
     // side; refuse anything larger rather than allocating unbounded memory.
     if len > 1024 * 1024 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "message too large"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "message too large",
+        ));
     }
 
     let mut buf = vec![0u8; len];
@@ -71,6 +74,7 @@ fn write_message<W: Write>(writer: &mut W, value: &Value) -> io::Result<()> {
 fn handle_message(client: &reqwest::blocking::Client, message: &Value) -> Value {
     match message.get("action").and_then(Value::as_str) {
         Some("add_download") => add_download(client, message),
+        Some("probe_video") => probe_video(client, message),
         Some("ping") => ping(client),
         Some(other) => json!({ "ok": false, "error": format!("unknown action: {other}") }),
         None => json!({ "ok": false, "error": "missing 'action' field" }),
@@ -82,8 +86,12 @@ fn handle_message(client: &reqwest::blocking::Client, message: &Value) -> Value 
 fn ping(client: &reqwest::blocking::Client) -> Value {
     match client.get(format!("{LOCAL_API_BASE}/api/downloads")).send() {
         Ok(resp) if resp.status().is_success() => json!({ "ok": true }),
-        Ok(resp) => json!({ "ok": false, "error": format!("unexpected status: {}", resp.status()) }),
-        Err(e) => json!({ "ok": false, "error": format!("could not reach the ODM app — is it running? ({e})") }),
+        Ok(resp) => {
+            json!({ "ok": false, "error": format!("unexpected status: {}", resp.status()) })
+        }
+        Err(e) => {
+            json!({ "ok": false, "error": format!("could not reach the ODM app — is it running? ({e})") })
+        }
     }
 }
 
@@ -121,6 +129,22 @@ mod tests {
         let resp = handle_message(&client, &msg);
         assert_eq!(resp["ok"], false);
     }
+
+    #[test]
+    fn accepts_quality_as_string_number_or_compatibility_alias() {
+        assert_eq!(
+            quality_from_message(&json!({ "quality": "1080" })),
+            Some("1080".into())
+        );
+        assert_eq!(
+            quality_from_message(&json!({ "quality": 1080 })),
+            Some("1080".into())
+        );
+        assert_eq!(
+            quality_from_message(&json!({ "selectedQuality": "720" })),
+            Some("720".into())
+        );
+    }
 }
 
 fn add_download(client: &reqwest::blocking::Client, message: &Value) -> Value {
@@ -128,8 +152,14 @@ fn add_download(client: &reqwest::blocking::Client, message: &Value) -> Value {
         return json!({ "ok": false, "error": "missing 'url' field" });
     };
     let filename = message.get("filename").and_then(Value::as_str);
+    let quality = quality_from_message(message);
+    let playlist = message
+        .get("playlist")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
 
-    let body = json!({ "url": url, "filename": filename });
+    let body =
+        json!({ "url": url, "filename": filename, "quality": quality, "playlist": playlist, "fallback_url": message.get("fallback_url"), "fallback_audio": message.get("fallback_audio") });
     let result = client
         .post(format!("{LOCAL_API_BASE}/api/downloads"))
         .json(&body)
@@ -149,5 +179,40 @@ fn add_download(client: &reqwest::blocking::Client, message: &Value) -> Value {
             "ok": false,
             "error": format!("could not reach the ODM app — is it running? ({e})")
         }),
+    }
+}
+
+fn quality_from_message(message: &Value) -> Option<String> {
+    message
+        .get("quality")
+        .or_else(|| message.get("selectedQuality"))
+        .and_then(|value| match value {
+            Value::String(text) => Some(text.clone()),
+            Value::Number(number) => Some(number.to_string()),
+            _ => None,
+        })
+}
+
+fn probe_video(client: &reqwest::blocking::Client, message: &Value) -> Value {
+    let Some(url) = message.get("url").and_then(Value::as_str) else {
+        return json!({ "ok": false, "error": "missing 'url' field" });
+    };
+    match client
+        .post(format!("{LOCAL_API_BASE}/api/video-qualities"))
+        .json(&json!({ "url": url }))
+        .send()
+    {
+        Ok(resp) if resp.status().is_success() => {
+            let qualities = resp.json::<Value>().unwrap_or(Value::Null);
+            json!({ "ok": true, "qualities": qualities })
+        }
+        Ok(resp) => {
+            let status = resp.status();
+            let text = resp.text().unwrap_or_default();
+            json!({ "ok": false, "error": format!("ODM could not inspect the video ({status}): {text}") })
+        }
+        Err(e) => {
+            json!({ "ok": false, "error": format!("could not reach the ODM app — is it running? ({e})") })
+        }
     }
 }

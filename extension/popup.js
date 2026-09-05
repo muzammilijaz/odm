@@ -3,6 +3,7 @@ const statusEl = document.getElementById("status");
 const formEl = document.getElementById("add-form");
 const urlInput = document.getElementById("add-url");
 const hostStatusEl = document.getElementById("host-status");
+const qualityEl = document.getElementById("video-quality");
 
 function setStatus(text, kind) {
   statusEl.textContent = text;
@@ -19,16 +20,29 @@ function filenameFromUrl(url) {
   }
 }
 
+const pendingDownloads = new Set();
 async function sendDownload(url) {
+  const key = JSON.stringify([url, qualityEl.value]);
+  if (pendingDownloads.has(key)) return false;
+  pendingDownloads.add(key);
+  try {
   setStatus("Sending…");
-  const response = await chrome.runtime.sendMessage({ type: "sendDownload", url, filename: filenameFromUrl(url) });
+  const response = await chrome.runtime.sendMessage({ type: "sendDownload", url, filename: filenameFromUrl(url), quality: qualityEl.value });
   if (response?.ok) {
     setStatus("Added to ODM.", "ok");
     setHostStatus(true);
+    return true;
   } else {
     setStatus(response?.error || "Failed to send.", "error");
     if (response?.error && /desktop app/i.test(response.error)) setHostStatus(false);
   }
+  } catch (error) {
+    setStatus(`Could not connect to ODM: ${error?.message || error}. Reopen the extension and retry.`, "error");
+    setHostStatus(false);
+  } finally {
+    pendingDownloads.delete(key);
+  }
+  return false;
 }
 
 function setHostStatus(online) {
@@ -38,14 +52,18 @@ function setHostStatus(online) {
 }
 
 async function checkHostStatus() {
+  try {
   const response = await chrome.runtime.sendMessage({ type: "ping" });
   setHostStatus(!!response?.ok);
+  } catch { setHostStatus(false); }
 }
 
 async function loadDetected() {
+  try {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) return;
   const detected = await chrome.runtime.sendMessage({ type: "getDetected", tabId: tab.id });
+  if (detected?.ok === false) throw new Error(detected.error);
 
   listEl.innerHTML = "";
   if (!detected || detected.length === 0) {
@@ -71,19 +89,29 @@ async function loadDetected() {
     li.appendChild(btn);
     listEl.appendChild(li);
   }
+  } catch (error) {
+    listEl.innerHTML = "";
+    setStatus(`Could not load detected media: ${error?.message || error}`, "error");
+  }
 }
 
 formEl.addEventListener("submit", async (e) => {
   e.preventDefault();
   const url = urlInput.value.trim();
   if (!url) return;
-  await sendDownload(url);
-  urlInput.value = "";
+  if (await sendDownload(url) && urlInput.value.trim() === url) urlInput.value = "";
 });
 
 const autoCaptureEl = document.getElementById("auto-capture");
 chrome.storage.local.get({ autoCapture: true }, (s) => {
   autoCaptureEl.checked = s.autoCapture;
+});
+
+chrome.storage.local.get({ videoQuality: "default" }, (s) => {
+  qualityEl.value = s.videoQuality;
+});
+qualityEl.addEventListener("change", () => {
+  chrome.storage.local.set({ videoQuality: qualityEl.value });
 });
 autoCaptureEl.addEventListener("change", () => {
   chrome.storage.local.set({ autoCapture: autoCaptureEl.checked });

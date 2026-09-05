@@ -369,7 +369,9 @@ button {
 }
 
 .btn--danger:hover {
-  filter: brightness(1.1);
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #fff;
 }
 
 /* Tabs row */
@@ -511,12 +513,28 @@ button {
   font-weight: 600;
 }
 
+.quality-fallback {
+  margin-top: 3px;
+  color: var(--warn);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: normal;
+}
+
+.col-quality,
 .col-size,
 .col-speed,
 .col-added {
   color: var(--muted);
   white-space: nowrap;
   width: 110px;
+}
+
+.col-quality {
+  width: 104px;
+  color: var(--text-secondary);
+  font-weight: 600;
 }
 
 .col-status {
@@ -978,6 +996,30 @@ button {
   border-color: var(--accent);
 }
 
+.modal__url-list {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 64px;
+  font: inherit;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.modal__url-list:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.playlist-pending { opacity: 0.65; }
+.playlist-pending:hover, .playlist-pending.row--selected { opacity: 1; }
+.playlist-group td { background: var(--panel); padding: 12px; }
+.playlist-group span { color: var(--muted); font-size: 0.85rem; }
+.playlist-delete { margin-left: 12px; }
+
 .modal__footer {
   display: flex;
   justify-content: flex-end;
@@ -1054,6 +1096,18 @@ button {
   padding: 14px 16px;
 }
 
+.popup-card--clickable {
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.popup-card--clickable:hover,
+.popup-card--clickable:focus-visible {
+  background: var(--panel-2);
+  border-color: var(--accent);
+  outline: none;
+}
+
 .popup-card--danger {
   border-color: var(--danger);
 }
@@ -1093,6 +1147,14 @@ button {
 .popup-card__error {
   font-size: 0.74rem;
   color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup-card__warning {
+  font-size: 0.72rem;
+  color: #d97706;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1140,6 +1202,16 @@ button {
 
 .download-complete__text {
   min-width: 0;
+}
+
+.quality-fallback-notice {
+  padding: 8px 10px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-sm);
+  background: var(--warn-bg);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 /* About modal */
@@ -1347,8 +1419,14 @@ button {
 .category__header {
   display: flex;
   gap: 8px;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 8px;
+}
+
+.category__header .toolbar__select {
+  min-width: 180px;
+  max-width: 100%;
 }
 
 .category__folder {

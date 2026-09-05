@@ -9,7 +9,9 @@ use crate::state::{part_path, state_path, DownloadState};
 use crate::throttle::Throttle;
 
 use futures_util::StreamExt;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, CONTENT_LENGTH, CONTENT_RANGE, RANGE, USER_AGENT};
+use reqwest::header::{
+    HeaderMap, HeaderName, HeaderValue, CONTENT_LENGTH, CONTENT_RANGE, RANGE, USER_AGENT,
+};
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -64,16 +66,24 @@ fn build_client(config: &DownloadConfig) -> Result<reqwest::Client> {
     // downloads and progress reporting alike. Confirmed live: a gzip'd
     // response reported downloaded_bytes > total_bytes before this was
     // disabled (reqwest's "gzip" cargo feature is not enabled here).
-    let mut builder = reqwest::Client::builder().connect_timeout(config.connect_timeout).cookie_store(true);
+    let mut builder = reqwest::Client::builder()
+        .connect_timeout(config.connect_timeout)
+        .cookie_store(true);
     builder = config.proxy.apply(builder)?;
     Ok(builder.build()?)
 }
 
 fn build_headers(config: &DownloadConfig) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
-    headers.insert(USER_AGENT, HeaderValue::from_str(&config.user_agent).unwrap_or(HeaderValue::from_static("ODM/0.1")));
+    headers.insert(
+        USER_AGENT,
+        HeaderValue::from_str(&config.user_agent).unwrap_or(HeaderValue::from_static("ODM/0.1")),
+    );
     for (k, v) in &config.extra_headers {
-        if let (Ok(name), Ok(value)) = (HeaderName::from_bytes(k.as_bytes()), HeaderValue::from_str(v)) {
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_bytes(k.as_bytes()),
+            HeaderValue::from_str(v),
+        ) {
             headers.insert(name, value);
         }
     }
@@ -125,7 +135,11 @@ async fn probe(client: &reqwest::Client, url: &str, headers: &HeaderMap) -> Resu
 /// Downloads `url` into `dest`, splitting into concurrent ranged chunks per
 /// `config`. Returns a handle for pause/resume/cancel + a live progress feed;
 /// the download itself runs on a spawned task.
-pub async fn download(url: impl Into<String>, dest: impl AsRef<Path>, config: DownloadConfig) -> Result<DownloadHandle> {
+pub async fn download(
+    url: impl Into<String>,
+    dest: impl AsRef<Path>,
+    config: DownloadConfig,
+) -> Result<DownloadHandle> {
     let url = url.into();
     let dest = dest.as_ref().to_path_buf();
 
@@ -140,7 +154,12 @@ pub async fn download(url: impl Into<String>, dest: impl AsRef<Path>, config: Do
             let (control, _pause_token) = DownloadControl::new();
             let (_tx, rx) = watch::channel(Progress::default());
             let join = tokio::spawn(async move { Ok(dest) });
-            return Ok(DownloadHandle { control, progress: rx, throttle: Throttle::new(0), join });
+            return Ok(DownloadHandle {
+                control,
+                progress: rx,
+                throttle: Throttle::new(0),
+                join,
+            });
         }
         FileExistPolicy::Error if tokio::fs::try_exists(&dest).await.unwrap_or(false) => {
             return Err(EngineError::Io(std::io::Error::new(
@@ -160,10 +179,21 @@ pub async fn download(url: impl Into<String>, dest: impl AsRef<Path>, config: Do
 
     let existing_state = DownloadState::load(&state_file).await?;
     let state = match existing_state {
-        Some(s) if s.url == url && s.total_size == probe_result.total_size.unwrap_or(0) && !s.is_complete() => s,
+        Some(s)
+            if s.url == url
+                && s.total_size == probe_result.total_size.unwrap_or(0)
+                && !s.is_complete() =>
+        {
+            s
+        }
         _ => {
             let chunks = match probe_result.total_size {
-                Some(size) => plan_chunks(size, config.chunk_count, config.min_chunk_size, probe_result.supports_range),
+                Some(size) => plan_chunks(
+                    size,
+                    config.chunk_count,
+                    config.min_chunk_size,
+                    probe_result.supports_range,
+                ),
                 None => vec![Chunk {
                     index: 0,
                     start: 0,
@@ -181,7 +211,11 @@ pub async fn download(url: impl Into<String>, dest: impl AsRef<Path>, config: Do
         }
     };
 
-    let file = OpenOptions::new().create(true).write(true).read(true).open(&part)?;
+    let file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .read(true)
+        .open(&part)?;
     if let Some(size) = probe_result.total_size {
         if probe_result.supports_range {
             file.set_len(size)?;
@@ -189,7 +223,11 @@ pub async fn download(url: impl Into<String>, dest: impl AsRef<Path>, config: Do
     }
     let file = Arc::new(file);
 
-    let positions: Vec<Arc<AtomicU64>> = state.chunks.iter().map(|c| Arc::new(AtomicU64::new(c.position))).collect();
+    let positions: Vec<Arc<AtomicU64>> = state
+        .chunks
+        .iter()
+        .map(|c| Arc::new(AtomicU64::new(c.position)))
+        .collect();
 
     let (control, pause_token) = DownloadControl::new();
     let (progress_tx, progress_rx) = watch::channel(Progress::default());
@@ -212,7 +250,12 @@ pub async fn download(url: impl Into<String>, dest: impl AsRef<Path>, config: Do
         progress_tx,
     ));
 
-    Ok(DownloadHandle { control, progress: progress_rx, throttle, join })
+    Ok(DownloadHandle {
+        control,
+        progress: progress_rx,
+        throttle,
+        join,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -274,12 +317,28 @@ async fn run_supervisor(
         }
     });
 
-    let results = run_all_chunks(&client, &url, &headers, &state.chunks, &positions, &file, &throttle, &pause_token, &control.cancel, &config).await;
+    let results = run_all_chunks(
+        &client,
+        &url,
+        &headers,
+        &state.chunks,
+        &positions,
+        &file,
+        &throttle,
+        &pause_token,
+        &control.cancel,
+        &config,
+    )
+    .await;
 
     let any_failed = results.iter().any(|r| r.is_err());
     let bytes_after_attempt: u64 = positions.iter().map(|p| p.load(Ordering::Relaxed)).sum();
 
-    if any_failed && state.chunks.len() > 1 && bytes_after_attempt == bytes_before_attempt && !control.cancel.is_cancelled() {
+    if any_failed
+        && state.chunks.len() > 1
+        && bytes_after_attempt == bytes_before_attempt
+        && !control.cancel.is_cancelled()
+    {
         // Single-connection fallback: every chunk failed transiently before any
         // bytes arrived (e.g. a proxy/middlebox breaking concurrent connections).
         // Retry once as one sequential stream covering the whole file.
@@ -291,7 +350,19 @@ async fn run_supervisor(
             unbounded: state.total_size == 0,
         };
         let fallback_positions = vec![Arc::new(AtomicU64::new(0))];
-        let fallback_results = run_all_chunks(&client, &url, &headers, &[fallback_chunk.clone()], &fallback_positions, &file, &throttle, &pause_token, &control.cancel, &config).await;
+        let fallback_results = run_all_chunks(
+            &client,
+            &url,
+            &headers,
+            &[fallback_chunk.clone()],
+            &fallback_positions,
+            &file,
+            &throttle,
+            &pause_token,
+            &control.cancel,
+            &config,
+        )
+        .await;
         if fallback_results.iter().all(|r| r.is_ok()) {
             state.chunks = vec![fallback_chunk];
             ticker.abort();
@@ -363,7 +434,20 @@ async fn run_all_chunks(
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire_owned().await.ok();
             let guard = throttle.register_chunk();
-            let result = run_chunk(client, url, headers, chunk, position, file, throttle.clone(), &mut pause_token, cancel, max_retries, read_timeout).await;
+            let result = run_chunk(
+                client,
+                url,
+                headers,
+                chunk,
+                position,
+                file,
+                throttle.clone(),
+                &mut pause_token,
+                cancel,
+                max_retries,
+                read_timeout,
+            )
+            .await;
             drop(guard);
             result
         }));
@@ -415,7 +499,17 @@ async fn run_chunk(
             req = req.header(RANGE, format!("bytes={}-{}", start, chunk.end));
         }
 
-        let attempt_result = run_chunk_attempt(req, &chunk, &position, &file, &throttle, pause_token, &cancel, read_timeout).await;
+        let attempt_result = run_chunk_attempt(
+            req,
+            &chunk,
+            &position,
+            &file,
+            &throttle,
+            pause_token,
+            &cancel,
+            read_timeout,
+        )
+        .await;
 
         match attempt_result {
             Ok(()) => return Ok(()),
@@ -480,14 +574,19 @@ async fn run_chunk_attempt(
                 let offset = chunk.start + position.load(Ordering::Relaxed);
                 let file = file.clone();
                 let buf = bytes.to_vec();
-                tokio::task::spawn_blocking(move || write_all_at(&file, &buf, offset)).await.map_err(|_| EngineError::Cancelled)??;
+                tokio::task::spawn_blocking(move || write_all_at(&file, &buf, offset))
+                    .await
+                    .map_err(|_| EngineError::Cancelled)??;
                 position.fetch_add(bytes.len() as u64, Ordering::Relaxed);
                 throttle.throttle(bytes.len() as u64).await;
             }
             Ok(Some(Err(e))) => return Err(e.into()),
             Ok(None) => break,
             Err(_elapsed) => {
-                return Err(EngineError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "chunk read timed out")))
+                return Err(EngineError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "chunk read timed out",
+                )))
             }
         }
     }
@@ -507,7 +606,14 @@ async fn run_chunk_attempt(
     Ok(())
 }
 
-async fn finalize(file: &Arc<std::fs::File>, part: &Path, dest: &Path, state_file: &Path, state: &DownloadState, _total_downloaded: u64) -> Result<PathBuf> {
+async fn finalize(
+    file: &Arc<std::fs::File>,
+    part: &Path,
+    dest: &Path,
+    state_file: &Path,
+    state: &DownloadState,
+    _total_downloaded: u64,
+) -> Result<PathBuf> {
     if state.total_size > 0 {
         file.set_len(state.total_size)?;
     }

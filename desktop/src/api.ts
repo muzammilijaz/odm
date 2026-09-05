@@ -2,8 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Category, Task } from "./types";
 
 export const api = {
-  addDownload: (url: string, filename?: string, playlist?: boolean) =>
-    invoke<Task>("add_download", { url, filename: filename || null, playlist: playlist ?? false }),
+  showMainWindow: () => invoke<void>("show_main_window"),
+  addDownload: (url: string, filename?: string, playlist?: boolean, quality?: string) =>
+    invoke<Task>("add_download", { url, filename: filename || null, playlist: playlist ?? false, quality: quality || "default" }),
   listDownloads: () => invoke<Task[]>("list_downloads"),
   pauseDownload: (id: number) => invoke<void>("pause_download", { id }),
   resumeDownload: (id: number) => invoke<void>("resume_download", { id }),

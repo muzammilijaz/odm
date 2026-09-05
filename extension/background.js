@@ -55,6 +55,20 @@ const STREAM_CONTENT_TYPES = [
 
 const MIN_STREAM_BYTES = 200 * 1024; // skip tiny thumbnails/preview fragments
 
+function singleVideoUrl(value) {
+  try {
+    const url = new URL(value);
+    const youtube = url.hostname === "youtu.be" || url.hostname === "youtube.com" || url.hostname.endsWith(".youtube.com");
+    if (youtube && url.pathname !== "/playlist") {
+      url.searchParams.delete("list");
+      url.searchParams.delete("index");
+      url.searchParams.delete("start_radio");
+      return url.href;
+    }
+  } catch {}
+  return value;
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: "odm-download-link",
@@ -137,8 +151,10 @@ chrome.webRequest.onHeadersReceived.addListener(
       });
     }
 
-    if (isManifest || isLargeMedia) {
-      recordDetection(details.tabId, { url: details.url, contentType, contentLength });
+    const capturedCdnMedia = /\.(googlevideo\.com|fbcdn\.net|cdninstagram\.com|tiktok\.com|tiktokcdn\.com)$/.test(new URL(details.url).hostname) &&
+      (contentType.startsWith("video/") || contentType.startsWith("audio/"));
+    if (isManifest || isLargeMedia || capturedCdnMedia) {
+      recordDetection(details.tabId, { url: details.url, contentType, contentLength, capturedAt: Date.now(), frameId: details.frameId });
     }
   },
   { urls: ["<all_urls>"] },
@@ -146,13 +162,13 @@ chrome.webRequest.onHeadersReceived.addListener(
 );
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === "loading" && changeInfo.url) {
-    clearDetections(tabId);
+  if (changeInfo.status === "loading" || changeInfo.url) {
+    clearDetections(tabId).catch(console.warn);
   }
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  clearDetections(tabId);
+  clearDetections(tabId).catch(console.warn);
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -163,13 +179,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === "getDetected") {
-    getDetections(message.tabId).then(sendResponse);
+    getDetections(message.tabId).then(sendResponse).catch(error => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
   if (message.type === "sendDownload") {
-    sendToNativeHost({ action: "add_download", url: message.url, filename: message.filename })
+    sendToNativeHost({ action: "add_download", url: message.url, filename: message.filename, quality: message.quality || "default" })
       .then((res) => sendResponse({ ok: true, res }))
       .catch((err) => sendResponse({ ok: false, error: String(err) }));
+    return true;
+  }
+  if (message.type === "getVideoQualities") {
+    const pageUrl = message.pageUrl || sender.tab?.url;
+    if (!pageUrl || !isKnownVideoHost(pageUrl)) {
+      sendResponse({ ok: true, heights: [] });
+      return false;
+    }
+    sendToNativeHost({ action: "probe_video", url: singleVideoUrl(pageUrl) })
+      .then((res) =>
+        sendResponse({
+          ok: true,
+          title: res?.qualities?.title || "Video",
+          heights: Array.isArray(res?.qualities?.heights) ? res.qualities.heights : [],
+        })
+      )
+      .catch((err) => sendResponse({ ok: false, error: String(err?.message || err), heights: [] }));
+    return true;
+  }
+  if (message.type === "getBrowserMedia") {
+    getDetections(sender.tab?.id).then((entries) => sendResponse(entries.filter((entry) =>
+      Date.now() - (entry.capturedAt || 0) < 120000 && entry.frameId === sender.frameId &&
+      entry.contentType?.startsWith("video/")
+    ).slice(-8)));
     return true;
   }
   // Sent by content.js's floating "Download this video" overlay button —
@@ -183,8 +223,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
     }
     const pageUrl = message.pageUrl || sender.tab?.url;
+    const quality = String(message.quality ?? message.selectedQuality ?? "best");
     if (pageUrl && isKnownVideoHost(pageUrl)) {
-      sendToNativeHost({ action: "add_download", url: pageUrl })
+      getDetections(tabId).then((entries) => sendToNativeHost({ action: "add_download", url: singleVideoUrl(pageUrl), quality,
+        fallback_url: message.mediaUrl, fallback_audio: matchingAudio(message.mediaUrl, entries, sender.frameId) }))
         .then((res) => sendResponse({ ok: true, res }))
         .catch((err) => sendResponse({ ok: false, error: String(err?.message || err) }));
       return true;
@@ -194,7 +236,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (detected && detected.length > 0) {
         try {
           const best = pickBestDetection(detected);
-          const res = await sendToNativeHost({ action: "add_download", url: best.url });
+          const res = await sendToNativeHost({ action: "add_download", url: best.url, quality });
           sendResponse({ ok: true, res });
         } catch (err) {
           sendResponse({ ok: false, error: String(err?.message || err) });
@@ -220,12 +262,42 @@ function pickBestDetection(detected) {
   return detected.reduce((best, e) => ((e.contentLength || 0) > (best.contentLength || 0) ? e : best), detected[0]);
 }
 
-async function recordDetection(tabId, entry) {
+function matchingAudio(mediaUrl, entries, frameId) {
+  try {
+    const video = new URL(mediaUrl);
+    const id = video.searchParams.get("id");
+    if (!video.hostname.endsWith(".googlevideo.com") || !id) return undefined;
+    return entries.find((entry) => {
+      const audio = new URL(entry.url);
+      return entry.frameId === frameId && Date.now() - (entry.capturedAt || 0) < 120000 &&
+        audio.hostname.endsWith(".googlevideo.com") && audio.searchParams.get("id") === id &&
+        (entry.contentType?.startsWith("audio/") || audio.searchParams.get("mime")?.startsWith("audio/"));
+    })?.url;
+  } catch { return undefined; }
+}
+
+// Serialize mutations so a pending capture cannot restore old URLs after
+// navigation clears the tab, or overwrite a simultaneously captured stream.
+const tabStorageJobs = new Map();
+function storageJob(tabId, operation) {
+  const job = (tabStorageJobs.get(tabId) || Promise.resolve()).then(operation);
+  const settled = job.catch(error => console.warn("ODM: media storage failed", error));
+  tabStorageJobs.set(tabId, settled);
+  settled.then(() => { if (tabStorageJobs.get(tabId) === settled) tabStorageJobs.delete(tabId); });
+  return job;
+}
+function recordDetection(tabId, entry) { return storageJob(tabId, () => updateDetection(tabId, entry)); }
+function recordCandidate(tabId, entry) { return storageJob(tabId, () => updateCandidate(tabId, entry)); }
+function clearDetections(tabId) { return storageJob(tabId, () => removeDetections(tabId)); }
+
+async function updateDetection(tabId, entry) {
   const key = storageKey(tabId);
   const store = await chrome.storage.session.get(key);
   const list = store[key] || [];
-  if (list.some((e) => e.url === entry.url)) return;
+  const previous = list.findIndex((e) => e.url === entry.url);
+  if (previous >= 0) list.splice(previous, 1);
   list.push(entry);
+  if (list.length > 100) list.splice(0, list.length - 100);
   await chrome.storage.session.set({ [key]: list });
   // The tab can close between the network response that triggered this and
   // this update running -- both calls throw "No tab with id" in that case,
@@ -236,12 +308,13 @@ async function recordDetection(tabId, entry) {
 }
 
 async function getDetections(tabId) {
+  await tabStorageJobs.get(tabId);
   const key = storageKey(tabId);
   const store = await chrome.storage.session.get(key);
   return store[key] || [];
 }
 
-async function clearDetections(tabId) {
+async function removeDetections(tabId) {
   await chrome.storage.session.remove(storageKey(tabId));
   await chrome.storage.session.remove(candidateKey(tabId));
   chrome.action.setBadgeText({ tabId, text: "" }).catch(() => {});
@@ -249,7 +322,7 @@ async function clearDetections(tabId) {
 
 const MAX_CANDIDATES = 8;
 
-async function recordCandidate(tabId, entry) {
+async function updateCandidate(tabId, entry) {
   const key = candidateKey(tabId);
   const store = await chrome.storage.session.get(key);
   const list = store[key] || [];
@@ -276,11 +349,25 @@ function sendToNativeHost(message) {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendNativeMessage(NATIVE_HOST, message, (response) => {
       if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message + " (is the ODM desktop app installed and running?)"));
+        const nativeError = chrome.runtime.lastError.message || "Native Messaging failed";
+        let hint = "Make sure the ODM desktop app is running.";
+        if (nativeError.includes("host not found")) {
+          hint = "Start the ODM desktop app once so it can register the browser connection, then retry.";
+        } else if (nativeError.includes("forbidden")) {
+          hint = "This extension ID is not allowed by the installed ODM native host; update or re-register ODM.";
+        } else if (nativeError.includes("host has exited") || nativeError.includes("Failed to start")) {
+          hint = "The ODM browser helper could not start; restart the ODM desktop app and retry.";
+        }
+        reject(new Error(`${nativeError} ${hint}`));
         return;
       }
-      if (response && response.ok === false) {
+      if (response?.ok === false) {
         reject(new Error(response.error || "ODM rejected the request"));
+        return;
+      }
+      if (!response || response.ok !== true ||
+          (message.action === "add_download" && (!response.task || typeof response.task !== "object" || Array.isArray(response.task)))) {
+        reject(new Error("ODM returned an empty or invalid response. Check the download list before retrying."));
         return;
       }
       resolve(response);

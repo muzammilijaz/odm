@@ -34,6 +34,8 @@ impl TaskStatus {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Task {
+    pub playlist_group: Option<String>,
+    pub playlist_title: Option<String>,
     pub id: i64,
     pub url: String,
     pub dest_path: String,
@@ -46,6 +48,11 @@ pub struct Task {
     pub retry_count: u32,
     pub error_message: Option<String>,
     pub allow_playlist: bool,
+    /// Preferred video height for yt-dlp downloads. `None` means best
+    /// available quality. The engine falls back if the exact height is absent.
+    pub video_quality: Option<u32>,
+    /// Actual height read from the completed output file after any fallback.
+    pub actual_video_quality: Option<u32>,
     /// The real video title, fetched upfront via a metadata probe for known
     /// video sites -- lets the UI show it immediately instead of the
     /// generic destination-folder name for the whole download.

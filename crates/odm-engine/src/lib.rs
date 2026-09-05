@@ -18,12 +18,9 @@ mod proxy;
 mod retry;
 mod state;
 mod throttle;
-mod ytdlp;
+pub mod ytdlp;
 
 pub use adaptive::{detect_stream_kind, download_adaptive, ffmpeg, StreamKind};
-pub use ytdlp::{
-    download_with_ytdlp, is_known_video_site, probe_formats as probe_ytdlp_formats, probe_title_thumbnail, update_ytdlp, YtdlpHandle, YtdlpOptions,
-};
 pub use chunk::Chunk;
 pub use config::{DownloadConfig, FileExistPolicy};
 pub use control::{DownloadControl, PauseToken};
@@ -32,3 +29,8 @@ pub use error::{EngineError, Result};
 pub use progress::Progress;
 pub use proxy::ProxyConfig;
 pub use state::DownloadState;
+pub use ytdlp::{
+    download_with_ytdlp, is_known_video_site, probe_formats as probe_ytdlp_formats,
+    probe_title_thumbnail, probe_video_qualities, probe_video_qualities_with_cookies, quality_format_selector, select_available_height,
+    update_ytdlp, VideoQualities, YtdlpHandle, YtdlpOptions, YtdlpOutcome,
+};

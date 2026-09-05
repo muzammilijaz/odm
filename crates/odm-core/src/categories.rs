@@ -6,15 +6,25 @@ use std::collections::HashMap;
 impl Db {
     pub async fn list_categories(&self) -> Result<Vec<Category>> {
         self.with_conn(|conn| {
-            let mut stmt = conn.prepare("SELECT name, default_folder FROM categories ORDER BY name")?;
-            let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+            let mut stmt =
+                conn.prepare("SELECT name, default_folder FROM categories ORDER BY name")?;
+            let rows =
+                stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
 
             let mut categories: Vec<Category> = Vec::new();
-            let mut ext_stmt = conn.prepare("SELECT extension FROM category_extensions WHERE category = ?1 ORDER BY extension")?;
+            let mut ext_stmt = conn.prepare(
+                "SELECT extension FROM category_extensions WHERE category = ?1 ORDER BY extension",
+            )?;
             for row in rows {
                 let (name, default_folder) = row?;
-                let extensions: Vec<String> = ext_stmt.query_map([&name], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<_>>()?;
-                categories.push(Category { name, default_folder, extensions });
+                let extensions: Vec<String> = ext_stmt
+                    .query_map([&name], |r| r.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<_>>()?;
+                categories.push(Category {
+                    name,
+                    default_folder,
+                    extensions,
+                });
             }
             Ok(categories)
         })
@@ -87,7 +97,10 @@ impl Db {
 }
 
 fn extract_extension(filename_or_url: &str) -> Option<String> {
-    let without_query = filename_or_url.split(['?', '#']).next().unwrap_or(filename_or_url);
+    let without_query = filename_or_url
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(filename_or_url);
     let last_segment = without_query.rsplit('/').next().unwrap_or(without_query);
     let ext = last_segment.rsplit_once('.').map(|(_, ext)| ext)?;
     if ext.is_empty() || ext.len() > 8 {
@@ -107,7 +120,10 @@ mod tests {
 
     #[test]
     fn extracts_extension_from_url_with_query() {
-        assert_eq!(extract_extension("https://cdn.example.com/path/archive.zip?token=abc&x=1"), Some("ZIP".to_string()));
+        assert_eq!(
+            extract_extension("https://cdn.example.com/path/archive.zip?token=abc&x=1"),
+            Some("ZIP".to_string())
+        );
     }
 
     #[test]

@@ -49,6 +49,11 @@ pub fn set_bundled_binary_env_vars(app: &AppHandle) {
         std::env::set_var("ODM_FFMPEG_PATH", &ffmpeg);
     }
 
+    let ffprobe = binaries_dir.join(format!("ffprobe-{TRIPLE}.exe"));
+    if ffprobe.exists() {
+        std::env::set_var("ODM_FFPROBE_PATH", &ffprobe);
+    }
+
     let ytdlp = binaries_dir.join(format!("yt-dlp-{TRIPLE}.exe"));
     if ytdlp.exists() {
         std::env::set_var("ODM_YTDLP_PATH", &ytdlp);

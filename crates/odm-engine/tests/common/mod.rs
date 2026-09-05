@@ -45,11 +45,16 @@ async fn serve_file(AxPath(size): AxPath<usize>, headers: HeaderMap) -> Response
 async fn serve_file_no_range(AxPath(size): AxPath<usize>, _headers: HeaderMap) -> Response {
     let body = deterministic_bytes(size);
     let mut resp = Response::new(Body::from(body.clone()));
-    resp.headers_mut().insert(header::CONTENT_LENGTH, body.len().into());
+    resp.headers_mut()
+        .insert(header::CONTENT_LENGTH, body.len().into());
     resp
 }
 
-async fn serve_file_fail_once(AxPath(size): AxPath<usize>, headers: HeaderMap, hits: Arc<AtomicUsize>) -> Response {
+async fn serve_file_fail_once(
+    AxPath(size): AxPath<usize>,
+    headers: HeaderMap,
+    hits: Arc<AtomicUsize>,
+) -> Response {
     // Hit 0 is the engine's own `Range: 0-0` probe request — let it succeed so
     // the download is scheduled at all. Fail hit 1 (the first real chunk
     // fetch) once, to exercise the per-chunk retry path.
@@ -79,13 +84,15 @@ fn respond_with_range(body: Vec<u8>, headers: &HeaderMap, supports_range: bool) 
                     header::CONTENT_RANGE,
                     format!("bytes {start}-{end}/{total}").parse().unwrap(),
                 );
-                resp.headers_mut().insert(header::CONTENT_LENGTH, (end - start + 1).into());
+                resp.headers_mut()
+                    .insert(header::CONTENT_LENGTH, (end - start + 1).into());
                 return resp;
             }
         }
     }
     let mut resp = Response::new(Body::from(body));
-    resp.headers_mut().insert(header::CONTENT_LENGTH, total.into());
+    resp.headers_mut()
+        .insert(header::CONTENT_LENGTH, total.into());
     resp
 }
 
@@ -93,6 +100,10 @@ fn parse_range(range: &str, total: u64) -> Option<(u64, u64)> {
     let spec = range.strip_prefix("bytes=")?;
     let (start_s, end_s) = spec.split_once('-')?;
     let start: u64 = start_s.parse().ok()?;
-    let end: u64 = if end_s.is_empty() { total - 1 } else { end_s.parse().ok()? };
+    let end: u64 = if end_s.is_empty() {
+        total - 1
+    } else {
+        end_s.parse().ok()?
+    };
     Some((start, end.min(total - 1)))
 }

@@ -12,7 +12,12 @@ $manifestTemplate = Join-Path $resourcesDir "com.odm.nativehost.template.json"
 $manifest = Get-Content $manifestTemplate -Raw | ConvertFrom-Json
 $manifest.path = $exePath
 $installedManifestPath = Join-Path $resourcesDir "com.odm.nativehost.installed.json"
-$manifest | ConvertTo-Json -Depth 5 | Set-Content -Path $installedManifestPath -Encoding utf8
+$manifestJson = $manifest | ConvertTo-Json -Depth 5
+[System.IO.File]::WriteAllText(
+    $installedManifestPath,
+    $manifestJson,
+    [System.Text.UTF8Encoding]::new($false)
+)
 
 function Register-NativeHost([Microsoft.Win32.RegistryView]$view) {
     $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey(

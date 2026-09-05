@@ -37,6 +37,11 @@
   line-height: 1;
 }
 
+#odm-download-badge .odm-badge-chevron {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
 #odm-download-badge .odm-badge-close:hover {
   color: #dc2626;
 }
@@ -59,4 +64,69 @@
 
 #odm-download-badge.odm-state-error .odm-badge-icon {
   color: #dc2626;
+}
+
+#odm-quality-menu {
+  display: none;
+}
+
+#odm-quality-menu.odm-quality-menu--open {
+  position: fixed;
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  width: 250px;
+  max-height: min(380px, calc(100vh - 16px));
+  overflow-y: auto;
+  padding: 6px;
+  background: #111827f7;
+  backdrop-filter: blur(8px);
+  border: 1px solid #334155;
+  border-radius: 10px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+  color: #f8fafc;
+  font: 500 12px "Inter", "Segoe UI", -apple-system, sans-serif;
+}
+
+#odm-quality-menu .odm-quality-heading,
+#odm-quality-menu .odm-quality-loading {
+  padding: 8px 10px;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+#odm-quality-menu .odm-quality-heading {
+  border-bottom: 1px solid #334155;
+  margin-bottom: 4px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+#odm-quality-menu .odm-quality-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #f8fafc;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+#odm-quality-menu .odm-quality-option:hover {
+  background: #1e40af;
+}
+
+#odm-quality-menu .odm-quality-format {
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+#odm-quality-menu .odm-quality-option:hover .odm-quality-format {
+  color: #dbeafe;
 }

@@ -35,7 +35,11 @@ struct Track {
 /// Downloads a DASH stream to `dest`: picks the highest-bandwidth video and
 /// audio representations, downloads their segments, and muxes them together
 /// with ffmpeg.
-pub async fn download_dash(client: &reqwest::Client, mpd_url: &str, dest: &Path) -> Result<PathBuf> {
+pub async fn download_dash(
+    client: &reqwest::Client,
+    mpd_url: &str,
+    dest: &Path,
+) -> Result<PathBuf> {
     let resp = client.get(mpd_url).send().await?;
     if !resp.status().is_success() {
         return Err(EngineError::BadStatus(resp.status()));
@@ -78,7 +82,9 @@ pub async fn download_dash(client: &reqwest::Client, mpd_url: &str, dest: &Path)
             tokio::fs::rename(&a, dest).await?;
         }
         (None, None) => {
-            return Err(EngineError::Io(std::io::Error::other("no usable video/audio representation found in MPD")));
+            return Err(EngineError::Io(std::io::Error::other(
+                "no usable video/audio representation found in MPD",
+            )));
         }
     }
 
@@ -89,12 +95,18 @@ pub async fn download_dash(client: &reqwest::Client, mpd_url: &str, dest: &Path)
 /// Downloads one representation's init segment (if any) plus every media
 /// segment, concatenating them byte-for-byte into `out_path` — valid for
 /// fragmented MP4/CMAF, which is the near-universal case for DASH VOD.
-async fn download_track(client: &reqwest::Client, base_url: &str, track: &Track, out_path: &Path) -> Result<PathBuf> {
+async fn download_track(
+    client: &reqwest::Client,
+    base_url: &str,
+    track: &Track,
+    out_path: &Path,
+) -> Result<PathBuf> {
     let tpl = &track.seg_template;
-    let media_tpl = tpl
-        .media
-        .as_ref()
-        .ok_or_else(|| EngineError::Io(std::io::Error::other("representation has no SegmentTemplate@media")))?;
+    let media_tpl = tpl.media.as_ref().ok_or_else(|| {
+        EngineError::Io(std::io::Error::other(
+            "representation has no SegmentTemplate@media",
+        ))
+    })?;
 
     let mut file = tokio::fs::File::create(out_path).await?;
     use tokio::io::AsyncWriteExt;
@@ -169,9 +181,13 @@ fn open_tag(
             let mut tpl = SegTemplate {
                 media: attr(e, "media"),
                 initialization: attr(e, "initialization"),
-                start_number: attr(e, "startNumber").and_then(|s| s.parse().ok()).unwrap_or(1),
+                start_number: attr(e, "startNumber")
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(1),
                 duration: attr(e, "duration").and_then(|s| s.parse().ok()),
-                timescale: attr(e, "timescale").and_then(|s| s.parse().ok()).unwrap_or(1),
+                timescale: attr(e, "timescale")
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(1),
                 timeline: Vec::new(),
             };
             if tpl.timescale == 0 {
@@ -213,7 +229,9 @@ fn parse_mpd(xml: &[u8], mpd_url: &str) -> Result<(String, Vec<Track>)> {
         () => {
             if let (Some(mime), Some(tpl)) = (
                 current_mime.clone(),
-                current_seg_tpl.take().or_else(|| adaptation_seg_tpl.clone()),
+                current_seg_tpl
+                    .take()
+                    .or_else(|| adaptation_seg_tpl.clone()),
             ) {
                 tracks.push(Track {
                     mime_type: mime,
@@ -289,7 +307,11 @@ fn parse_mpd(xml: &[u8], mpd_url: &str) -> Result<(String, Vec<Track>)> {
                 }
             }
             Ok(_) => {}
-            Err(e) => return Err(EngineError::Io(std::io::Error::other(format!("MPD parse error: {e}")))),
+            Err(e) => {
+                return Err(EngineError::Io(std::io::Error::other(format!(
+                    "MPD parse error: {e}"
+                ))))
+            }
         }
         buf.clear();
     }
@@ -298,7 +320,10 @@ fn parse_mpd(xml: &[u8], mpd_url: &str) -> Result<(String, Vec<Track>)> {
 }
 
 fn attr(e: &quick_xml::events::BytesStart, key: &str) -> Option<String> {
-    e.attributes().flatten().find(|a| a.key.as_ref() == key.as_bytes()).and_then(|a| a.unescape_value().ok().map(|v| v.to_string()))
+    e.attributes()
+        .flatten()
+        .find(|a| a.key.as_ref() == key.as_bytes())
+        .and_then(|a| a.unescape_value().ok().map(|v| v.to_string()))
 }
 
 #[cfg(test)]
@@ -331,17 +356,27 @@ mod tests {
 
     #[test]
     fn parses_video_and_audio_tracks_with_timeline() {
-        let (_, tracks) = parse_mpd(SAMPLE_MPD.as_bytes(), "https://example.com/stream/manifest.mpd").unwrap();
+        let (_, tracks) = parse_mpd(
+            SAMPLE_MPD.as_bytes(),
+            "https://example.com/stream/manifest.mpd",
+        )
+        .unwrap();
         assert_eq!(tracks.len(), 3);
 
-        let video_tracks: Vec<_> = tracks.iter().filter(|t| t.mime_type.starts_with("video")).collect();
+        let video_tracks: Vec<_> = tracks
+            .iter()
+            .filter(|t| t.mime_type.starts_with("video"))
+            .collect();
         assert_eq!(video_tracks.len(), 2);
         let best_video = video_tracks.iter().max_by_key(|t| t.bandwidth).unwrap();
         assert_eq!(best_video.bandwidth, 2_000_000);
         // Same SegmentTemplate is shared (declared at AdaptationSet level) by both representations.
         assert_eq!(best_video.seg_template.timeline, vec![(4000, 2), (2000, 0)]);
 
-        let audio = tracks.iter().find(|t| t.mime_type.starts_with("audio")).unwrap();
+        let audio = tracks
+            .iter()
+            .find(|t| t.mime_type.starts_with("audio"))
+            .unwrap();
         assert_eq!(audio.bandwidth, 128_000);
         assert_eq!(audio.seg_template.media.as_deref(), Some("a-$Number$.m4s"));
     }
