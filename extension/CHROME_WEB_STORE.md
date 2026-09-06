@@ -21,11 +21,12 @@ This produces `odm-extension.zip` containing only what Chrome loads
    <https://chrome.google.com/webstore/devconsole>
 2. Click "New item", upload `odm-extension.zip`.
 
-Because `manifest.json` already includes the `"key"` field pinned to
-`keys/public_key_base64.txt`, the published extension keeps the **same ID**
-(`igjebnkcfkjpleeahgjnpdkahplddfdc`) as your local dev build — required so
-the native messaging host's `allowed_origins` doesn't need to change between
-testing and the published version.
+Update the existing Store item `lfpiggopnkjdgedghgapjnmijgckebkd`.
+The unpacked development build has a different ID,
+`igjebnkcfkjpleeahgjnpdkahplddfdc`, pinned by the source manifest's `key`.
+The packaging script removes that development key from the upload ZIP.
+Both IDs must remain in the native host's `allowed_origins`. Creating a new
+Store item produces a different identity and is not the update workflow.
 
 ## 3. Store listing fields
 
@@ -72,7 +73,7 @@ Chrome will ask you to justify each permission. Paste these in:
 | `webRequest` | Read-only use (no blocking/modification) to inspect response headers (content-type, content-length) and detect downloadable video/audio streams (HLS/DASH manifests) on the current page, so the user can download them via the in-page button or popup. |
 | `contextMenus` | Adds "Download with ODM" to the right-click menu for links and media. |
 | `storage` | Persists the user's "auto-capture" preference locally and caches per-tab detected-stream lists for the popup to display. |
-| `nativeMessaging` | The only way for a browser extension to talk to a desktop application — used exclusively to relay download requests to the local ODM app on 127.0.0.1. |
+| `nativeMessaging` | Primary connection for relaying download requests to the local ODM desktop app. If the helper is unavailable, the extension uses the same app's loopback HTTP API automatically. |
 | Host permission `<all_urls>` | The extension's entire purpose is capturing downloads and detecting media streams on *any* site the user browses — a fixed allowlist of sites isn't possible for a general-purpose download manager. No page content is read or altered; only network response headers and download events are observed. |
 
 **Are you using remote code?** No.
@@ -82,7 +83,7 @@ transmitted to, or stored by any server operated by the developer — see
 the Privacy practices section and [PRIVACY.md](PRIVACY.md). All the data
 listed above (URLs, headers) either stays local to the browser
 (`chrome.storage`) or is sent only to the user's own local desktop app via
-Native Messaging, never over the network.
+Native Messaging or the loopback HTTP API at `127.0.0.1:38019`, never to a remote server.
 
 ## 5. Screenshots
 

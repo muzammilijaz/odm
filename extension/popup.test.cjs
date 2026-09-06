@@ -4,16 +4,18 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 function popup(sendMessage = async () => { throw Error('Message port closed'); }) {
+  let recheck;
   const elements = new Map();
   const getElementById = id => {
     if (!elements.has(id)) elements.set(id, {
       value:'', textContent:'', className:'', classList:{add(){},remove(){}},
-      querySelector(){return {textContent:''};},
+      querySelector(){return this.label ||= {textContent:''};},
       addEventListener(type, callback){this[type] = callback;},
     });
     return elements.get(id);
   };
   const context = {
+    setInterval(callback) { recheck = callback; },
     URL, document:{getElementById},
     chrome:{
       runtime:{sendMessage,getManifest(){return {version:'1.1.0'};}},
@@ -22,7 +24,7 @@ function popup(sendMessage = async () => { throw Error('Message port closed'); }
     },
   };
   vm.runInNewContext(fs.readFileSync(__dirname + '/popup.js','utf8'),context);
-  return {getElementById};
+  return {getElementById, recheck: () => recheck()};
 }
 
 test('popup handles rejected messaging and retains the URL for retry', async () => {
@@ -64,4 +66,16 @@ test('rapid repeat submissions send once; successful or failed requests unlock r
   reply({ok:true});
   await intentionalCopy;
   assert.equal(el('add-url').value,'');
+});
+
+test('an open popup reconnects automatically when the app becomes available', async () => {
+  let online = false;
+  const p = popup(async message => message.type === 'ping' ? {ok:online,error:'App unavailable'} : []);
+  await new Promise(resolve => setImmediate(resolve));
+  const status = p.getElementById('host-status');
+  assert.equal(status.querySelector().textContent, 'App offline');
+  online = true;
+  await p.recheck();
+  assert.equal(status.querySelector().textContent, 'Connected');
+  assert.equal(status.title, 'ODM is connected');
 });

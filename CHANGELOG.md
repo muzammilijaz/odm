@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.1.1 — Automatic browser connection recovery
+
+- Automatically connect the extension to the running desktop app over loopback if the native messaging helper fails. Requires desktop and extension 1.1.1.
+- Recheck connection status while the extension popup is open.
+- Prevent automatic replay of downloads after a lost response.
+- Recover automatically if Chrome rejects helper launch or extension authorization after the initial connection check.
+- Bypass system proxies for native helper communication with the local app.
+- Rebuild the native helper for every installer so old binaries cannot be bundled accidentally.
+
 ## v1.1.0 — Video quality and playlists
 
 - Choose the video quality you want, from low quality to 4K.

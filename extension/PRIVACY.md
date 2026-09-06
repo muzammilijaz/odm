@@ -21,12 +21,14 @@ server for this extension to talk to.
 - No remote code execution — everything the extension runs ships in the
   reviewed package; nothing is fetched or `eval`'d at runtime.
 
-## Native Messaging
+## Local desktop connection
 
 This extension only functions alongside the free, open-source ODM desktop
 app (source: <https://github.com/muzammilijaz/odm>). Communication happens
-exclusively over a local Native Messaging connection to a small helper
-process running on your own machine — nothing crosses the network.
+over Native Messaging to a small helper process on your own machine. If
+that connection fails, the extension automatically uses the desktop app's
+local HTTP API at `http://127.0.0.1:38019`. Both connections stay on your
+computer; no extension data is sent to a remote service.
 
 ## Changes to this policy
 

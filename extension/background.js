@@ -7,11 +7,11 @@
 //     manifests and large video/audio responses, surfaced in the popup for
 //     the user to add.
 //
-// Every capture is relayed to the ODM desktop app via Chrome's Native
-// Messaging protocol, to a small native host binary which forwards to the
-// app's local loopback HTTP API. See native-host/ and README.md for setup.
+// Captures use Native Messaging with an automatic direct loopback fallback
+// when the helper is unavailable. Both routes reach the same desktop API.
 
 const NATIVE_HOST = "com.odm.nativehost";
+const LOCAL_API = "http://127.0.0.1:38019";
 
 // Mirrors odm-engine's KNOWN_VIDEO_HOSTS (crates/odm-engine/src/ytdlp.rs).
 // Sites like YouTube multiplex video/audio through custom protocols (e.g.
@@ -175,7 +175,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "ping") {
     sendToNativeHost({ action: "ping" })
       .then(() => sendResponse({ ok: true }))
-      .catch(() => sendResponse({ ok: false }));
+      .catch((err) => sendResponse({ ok: false, error: String(err?.message || err) }));
     return true;
   }
   if (message.type === "getDetected") {
@@ -345,9 +345,83 @@ function candidateKey(tabId) {
   return `candidates:${tabId}`;
 }
 
-function sendToNativeHost(message) {
+// Select a working connection with a read-only ping before sending a request.
+// Never replay a download after an ambiguous transport failure: the app may
+// already have accepted it even if the response was lost.
+async function sendToNativeHost(message) {
+  try {
+    await nativeRequest({ action: "ping" }, 2500);
+  } catch (nativeError) {
+    return sendLocally(message, nativeError);
+  }
+  if (message.action === "ping") return { ok: true };
+  try {
+    return await nativeRequest(message, 30000);
+  } catch (error) {
+    // Chrome explicitly rejected launch/authorization before delivery, or
+    // this is a read-only quality probe. These are safe to try locally.
+    if (error.notDelivered || message.action === "probe_video") {
+      return sendLocally(message, error);
+    }
+    throw error;
+  }
+}
+
+async function sendLocally(message, nativeError) {
+    try {
+      const health = await localRequest("/api/health", undefined, 2500);
+      if (health?.app !== "com.odm.app" || health?.protocol !== 1) {
+        throw new Error("Unexpected local application");
+      }
+    } catch (localError) {
+      throw new Error(`${nativeError.message} Local connection: ${localError.message}. Open the updated ODM desktop app and retry.`);
+    }
+    if (message.action === "ping") return { ok: true };
+    if (message.action === "probe_video") {
+      return { ok: true, qualities: await localRequest("/api/video-qualities", { url: message.url }, 18000) };
+    }
+    if (message.action === "add_download") {
+      const { action, ...body } = message;
+      const task = await localRequest("/api/downloads", body, 30000);
+      if (!task || typeof task !== "object" || Array.isArray(task)) {
+        throw new Error("ODM returned an invalid response. Check the download list before retrying.");
+      }
+      return { ok: true, task };
+    }
+    throw new Error("Unsupported ODM request");
+}
+
+async function localRequest(path, body, timeout) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(`${LOCAL_API}${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+      cache: "no-store",
+      credentials: "omit",
+      redirect: "error",
+    });
+    if (!response.ok) throw new Error(`ODM rejected the request (${response.status}).`);
+    return await response.json();
+  } catch (error) {
+    if (body !== undefined) {
+      throw new Error(`ODM connection failed: ${error.message}. Check the download list before retrying.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function nativeRequest(message, timeout) {
   return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("ODM browser helper timed out. Check the download list before retrying.")), timeout);
+    try {
     chrome.runtime.sendNativeMessage(NATIVE_HOST, message, (response) => {
+      clearTimeout(timer);
       if (chrome.runtime.lastError) {
         const nativeError = chrome.runtime.lastError.message || "Native Messaging failed";
         let hint = "Make sure the ODM desktop app is running.";
@@ -358,7 +432,9 @@ function sendToNativeHost(message) {
         } else if (nativeError.includes("host has exited") || nativeError.includes("Failed to start")) {
           hint = "The ODM browser helper could not start; restart the ODM desktop app and retry.";
         }
-        reject(new Error(`${nativeError} ${hint}`));
+        const error = new Error(`${nativeError} ${hint}`);
+        error.notDelivered = /^(Specified native messaging host not found\.?|Access to the specified native messaging host is forbidden\.?|Failed to start native messaging host\.?)$/i.test(nativeError);
+        reject(error);
         return;
       }
       if (response?.ok === false) {
@@ -372,5 +448,9 @@ function sendToNativeHost(message) {
       }
       resolve(response);
     });
+    } catch (error) {
+      clearTimeout(timer);
+      reject(error);
+    }
   });
 }

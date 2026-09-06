@@ -19,8 +19,7 @@ $include = @(
     "icons"
 )
 
-$stagingDir = Join-Path $env:TEMP "odm-extension-staging"
-if (Test-Path $stagingDir) { Remove-Item $stagingDir -Recurse -Force }
+$stagingDir = Join-Path $env:TEMP ("odm-extension-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $stagingDir | Out-Null
 
 foreach ($item in $include) {
@@ -41,7 +40,9 @@ $manifestJson = $stagedManifest | ConvertTo-Json -Depth 10
 )
 
 Compress-Archive -Path (Join-Path $stagingDir "*") -DestinationPath $outZip
-Remove-Item $stagingDir -Recurse -Force
+$resolvedStaging = (Resolve-Path -LiteralPath $stagingDir).Path
+if ($resolvedStaging -ne [IO.Path]::GetFullPath($stagingDir)) { throw "Unexpected staging path" }
+Remove-Item -LiteralPath $resolvedStaging -Recurse -Force
 
 Write-Host "Packaged: $outZip"
 Write-Host "Upload this file directly at https://chrome.google.com/webstore/devconsole"

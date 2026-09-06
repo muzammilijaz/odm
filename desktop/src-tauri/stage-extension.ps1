@@ -14,7 +14,12 @@ $repoRoot = Resolve-Path (Join-Path $srcTauri "..\..")
 $extensionSrc = Resolve-Path (Join-Path $repoRoot "extension")
 $dest = Join-Path $srcTauri "resources\extension"
 
-if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+if (Test-Path $dest) {
+    $resolvedDest = (Resolve-Path -LiteralPath $dest).Path
+    $expectedDest = [IO.Path]::GetFullPath((Join-Path $srcTauri "resources\extension"))
+    if ($resolvedDest -ne $expectedDest) { throw "Unexpected extension staging path: $resolvedDest" }
+    Remove-Item -LiteralPath $resolvedDest -Recurse -Force
+}
 New-Item -ItemType Directory -Path $dest | Out-Null
 
 $include = @("manifest.json", "background.js", "content.js", "content.css", "popup.html", "popup.js", "icons")
@@ -25,6 +30,12 @@ foreach ($item in $include) {
 Write-Host "Staged extension resource at $dest"
 
 $nativeHostExe = Join-Path $repoRoot "target\release\odm-native-host.exe"
+Push-Location $repoRoot
+try {
+    cargo build -p odm-native-host --release
+    if ($LASTEXITCODE -ne 0) { throw "Native host build failed: $LASTEXITCODE" }
+}
+finally { Pop-Location }
 if (-not (Test-Path $nativeHostExe)) {
     Write-Error "odm-native-host.exe not found at $nativeHostExe`nBuild it first: cargo build -p odm-native-host --release"
 }

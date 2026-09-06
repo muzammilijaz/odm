@@ -25,6 +25,9 @@ pub async fn serve(manager: TaskManager, port: u16) {
         .allow_headers(Any);
 
     let app = Router::new()
+        .route("/api/health", get(|| async {
+            Json(serde_json::json!({ "app": "com.odm.app", "protocol": 1 }))
+        }))
         .route("/api/downloads", get(list_downloads).post(add_download))
         .route("/api/video-qualities", post(probe_video_qualities))
         .route("/api/downloads/:id/pause", post(pause_download))

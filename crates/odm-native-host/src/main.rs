@@ -18,7 +18,13 @@ use std::io::{self, Read, Write};
 const LOCAL_API_BASE: &str = "http://127.0.0.1:38019";
 
 fn main() {
-    let client = reqwest::blocking::Client::new();
+    // Local IPC must never follow a user's system HTTP proxy.
+    let client = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .connect_timeout(std::time::Duration::from_secs(2))
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .expect("could not initialize local ODM client");
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut stdin = stdin.lock();

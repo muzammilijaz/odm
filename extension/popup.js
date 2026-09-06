@@ -55,6 +55,7 @@ async function checkHostStatus() {
   try {
   const response = await chrome.runtime.sendMessage({ type: "ping" });
   setHostStatus(!!response?.ok);
+  hostStatusEl.title = response?.ok ? "ODM is connected" : (response?.error || "Open the ODM desktop app to connect.");
   } catch { setHostStatus(false); }
 }
 
@@ -120,4 +121,5 @@ autoCaptureEl.addEventListener("change", () => {
 document.getElementById("version").textContent = `v${chrome.runtime.getManifest().version}`;
 
 checkHostStatus();
+setInterval(checkHostStatus, 5000);
 loadDetected();
