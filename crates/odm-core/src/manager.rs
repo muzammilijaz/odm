@@ -135,6 +135,9 @@ impl TaskManager {
         // reports it (see `run_ytdlp`).
         if odm_engine::is_known_video_site(url) {
             let video_quality = self.resolve_video_quality(quality).await;
+            if let Some(existing) = self.db.find_existing_download(url, video_quality).await? {
+                return Ok(existing);
+            }
             let video_category = self
                 .db
                 .list_categories()
@@ -206,6 +209,10 @@ impl TaskManager {
             .map(|s| s.to_string())
             .or_else(|| filename_from_url(url))
             .unwrap_or_else(|| "download".to_string());
+
+        if let Some(existing) = self.db.find_existing_download(url, None).await? {
+            return Ok(existing);
+        }
 
         let category = self.db.resolve_category(&filename).await?;
         let dest_dir = match &category {
@@ -1040,7 +1047,7 @@ fn filename_from_url(url: &str) -> Option<String> {
 fn valid_browser_media_url(value: &str) -> bool {
     let Ok(url) = url::Url::parse(value) else { return false };
     url.scheme() == "https" && url.host_str().is_some_and(|host|
-        ["fbcdn.net", "cdninstagram.com", "googlevideo.com", "tiktok.com", "tiktokcdn.com"]
+        ["fbcdn.net", "cdninstagram.com", "googlevideo.com", "tiktok.com", "tiktokcdn.com", "bilivideo.com"]
             .iter().any(|suffix| host.ends_with(&format!(".{suffix}"))))
 }
 

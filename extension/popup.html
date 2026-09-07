@@ -106,6 +106,9 @@
         box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.2);
       }
 
+      .connect-button { margin-left: 6px; padding: 4px 8px; font-size: 10px; display: none; }
+      .status-dot.offline .connect-button { display: inline-block; }
+
       main {
         padding: 12px 16px 14px;
       }
@@ -334,6 +337,7 @@
         <span class="tagline">Open Download Manager <span id="version" class="version"></span></span>
       </div>
       <div class="status-dot" id="host-status">
+        <button class="connect-button" id="connect-button" type="button">Connect</button>
         <span class="dot"></span>
         <span class="text">Checking…</span>
       </div>

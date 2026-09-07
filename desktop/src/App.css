@@ -266,6 +266,11 @@ body {
   color: var(--muted);
 }
 
+.extension-status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12px; color: var(--muted); }
+.extension-status__dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; }
+.extension-status--connected { color: #16a34a; }
+.extension-status--connected .extension-status__dot { background: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,.16); }
+
 /* Toolbar */
 .toolbar {
   display: flex;

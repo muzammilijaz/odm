@@ -35,7 +35,43 @@ const KNOWN_VIDEO_HOSTS: &[&str] = &[
     "clips.twitch.tv",
     "soundcloud.com",
     "reddit.com",
+    "bilibili.com",
+    "b23.tv",
+    "bilivideo.com",
 ];
+
+// TikTok's mobile API is region-sensitive. This host is a reliable fallback
+// for the common case where the extractor's default API endpoint returns an
+// empty/blocked response. It is passed to every probe and download, including
+// extension-originated requests, so no manual yt-dlp flags are required.
+fn is_tiktok_url(url: &str) -> bool {
+    let Ok(parsed) = url::Url::parse(url) else {
+        return false;
+    };
+    parsed.host_str().is_some_and(|host| {
+        let host = host.to_ascii_lowercase();
+        host == "tiktok.com" || host.ends_with(".tiktok.com") || host.ends_with(".tiktokv.com")
+    })
+}
+
+fn add_tiktok_extractor_args(command: &mut tokio::process::Command, url: &str) {
+    if is_tiktok_url(url) {
+        command.args([
+            "--extractor-args",
+            "tiktok:api_hostname=api22-normal-c-useast2a.tiktokv.com",
+        ]);
+    }
+}
+
+fn add_bilibili_referer(command: &mut tokio::process::Command, url: &str) {
+    if url::Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| host == "bilivideo.com" || host.ends_with(".bilivideo.com"))
+    {
+        command.args(["--referer", "https://www.bilibili.com/"]);
+    }
+}
 
 pub fn is_known_video_site(url: &str) -> bool {
     let Ok(parsed) = url::Url::parse(url) else {
@@ -49,11 +85,27 @@ pub fn is_known_video_site(url: &str) -> bool {
         .any(|known| host == *known || host.ends_with(&format!(".{known}")))
 }
 
-/// Resolves the yt-dlp binary: an `ODM_YTDLP_PATH` override, a copy bundled
-/// next to the running executable, or whatever `yt-dlp` is on `PATH`.
+/// Resolves yt-dlp in install-location-independent order:
+/// explicit override, the user-writable managed copy, a bundled copy next to
+/// the executable, then PATH. The managed copy is what the in-app updater
+/// owns, so installs under Program Files remain updateable without elevation.
 pub fn resolve_ytdlp_path() -> PathBuf {
     if let Ok(p) = std::env::var("ODM_YTDLP_PATH") {
-        return PathBuf::from(p);
+        if !p.trim().is_empty() {
+            return PathBuf::from(p);
+        }
+    }
+    if let Ok(p) = std::env::var("ODM_YTDLP_USER_PATH") {
+        let managed = PathBuf::from(p);
+        if managed.is_file() {
+            return managed;
+        }
+    }
+    if let Ok(p) = std::env::var("ODM_YTDLP_BUNDLED_PATH") {
+        let bundled = PathBuf::from(p);
+        if bundled.is_file() {
+            return bundled;
+        }
     }
     let exe_name = if cfg!(windows) {
         "yt-dlp.exe"
@@ -69,6 +121,25 @@ pub fn resolve_ytdlp_path() -> PathBuf {
         }
     }
     PathBuf::from(exe_name)
+}
+
+fn managed_ytdlp_path() -> Option<PathBuf> {
+    std::env::var("ODM_YTDLP_USER_PATH")
+        .ok()
+        .filter(|p| !p.trim().is_empty())
+        .map(PathBuf::from)
+}
+
+/// Returns the path that should receive an in-app update. Explicit user
+/// overrides are respected; otherwise updates are redirected to the managed
+/// per-user copy instead of attempting to overwrite the install directory.
+fn update_target_path() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("ODM_YTDLP_PATH") {
+        if !p.trim().is_empty() {
+            return Some(PathBuf::from(p));
+        }
+    }
+    managed_ytdlp_path()
 }
 
 /// Resolves a bundled QuickJS binary, if present (an `ODM_QUICKJS_PATH`
@@ -109,23 +180,60 @@ pub async fn probe_formats(url: &str) -> Result<serde_json::Value> {
 }
 
 /// Fetch the entire flat playlist before any media download begins.
-pub async fn fetch_playlist(url: &str, cookies_file: Option<&str>, browser: Option<&str>) -> Result<serde_json::Value> {
+pub async fn fetch_playlist(
+    url: &str,
+    cookies_file: Option<&str>,
+    browser: Option<&str>,
+) -> Result<serde_json::Value> {
     let mut command = no_window_command(resolve_ytdlp_path());
     command.kill_on_drop(true);
-    command.args(["--ignore-config", "--flat-playlist", "--yes-playlist", "--dump-single-json", "--skip-download", "--sleep-requests", "0.75", "--socket-timeout", "15", "--retries", "2"]);
-    if let Some(file) = cookies_file { command.args(["--cookies", file]); }
-    else if let Some(browser) = browser { command.args(["--cookies-from-browser", browser]); }
-    let output = tokio::time::timeout(std::time::Duration::from_secs(180), command.arg(url).output()).await
-        .map_err(|_| EngineError::Io(std::io::Error::other("Playlist fetch timed out; no videos were queued. Retry the playlist.")))??;
-    if !output.status.success() { return Err(ytdlp_error(&output.stderr, output.status)); }
+    command.args([
+        "--ignore-config",
+        "--flat-playlist",
+        "--yes-playlist",
+        "--dump-single-json",
+        "--skip-download",
+        "--sleep-requests",
+        "0.75",
+        "--socket-timeout",
+        "15",
+        "--retries",
+        "2",
+    ]);
+    add_tiktok_extractor_args(&mut command, url);
+    add_bilibili_referer(&mut command, url);
+    if let Some(file) = cookies_file {
+        command.args(["--cookies", file]);
+    } else if let Some(browser) = browser {
+        command.args(["--cookies-from-browser", browser]);
+    }
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(180),
+        command.arg(url).output(),
+    )
+    .await
+    .map_err(|_| {
+        EngineError::Io(std::io::Error::other(
+            "Playlist fetch timed out; no videos were queued. Retry the playlist.",
+        ))
+    })??;
+    if !output.status.success() {
+        return Err(ytdlp_error(&output.stderr, output.status));
+    }
     Ok(serde_json::from_slice(&output.stdout)?)
 }
 
-async fn probe_formats_with_cookies(url: &str, cookies_file: Option<&str>, cookies_browser: Option<&str>) -> Result<serde_json::Value> {
+async fn probe_formats_with_cookies(
+    url: &str,
+    cookies_file: Option<&str>,
+    cookies_browser: Option<&str>,
+) -> Result<serde_json::Value> {
     let ytdlp = resolve_ytdlp_path();
     let mut command = no_window_command(&ytdlp);
     command.kill_on_drop(true);
     command.args(["--socket-timeout", "10", "--retries", "1"]);
+    add_tiktok_extractor_args(&mut command, url);
+    add_bilibili_referer(&mut command, url);
     if let Some(path) = cookies_file {
         command.args(["--cookies", path]);
     } else if let Some(browser) = cookies_browser {
@@ -137,12 +245,18 @@ async fn probe_formats_with_cookies(url: &str, cookies_file: Option<&str>, cooki
             &format!("quickjs:{}", quickjs_path.display()),
         ]);
     }
-    let output = tokio::time::timeout(std::time::Duration::from_secs(20), command
-        .args(["-J", "--no-playlist", url])
-        .output())
-        .await
-        .map_err(|_| EngineError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Video inspection timed out. Try again or check your sign-in settings.")))?
-        .map_err(EngineError::Io)?;
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        command.args(["-J", "--no-playlist", url]).output(),
+    )
+    .await
+    .map_err(|_| {
+        EngineError::Io(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "Video inspection timed out. Try again or check your sign-in settings.",
+        ))
+    })?
+    .map_err(EngineError::Io)?;
 
     if !output.status.success() {
         return Err(ytdlp_error(&output.stderr, output.status));
@@ -167,7 +281,11 @@ pub async fn probe_video_qualities(url: &str) -> Result<VideoQualities> {
     Ok(video_qualities_from_info(&info))
 }
 
-pub async fn probe_video_qualities_with_cookies(url: &str, cookies_file: Option<&str>, cookies_browser: Option<&str>) -> Result<VideoQualities> {
+pub async fn probe_video_qualities_with_cookies(
+    url: &str,
+    cookies_file: Option<&str>,
+    cookies_browser: Option<&str>,
+) -> Result<VideoQualities> {
     let info = probe_formats_with_cookies(url, cookies_file, cookies_browser).await?;
     Ok(video_qualities_from_info(&info))
 }
@@ -244,7 +362,26 @@ pub async fn probe_title_thumbnail(url: &str) -> Result<(String, Option<String>)
 /// failing downloads on popular sites until updated. Returns yt-dlp's own
 /// report of what happened ("up to date" / "updated to X" / etc).
 pub async fn update_ytdlp() -> Result<String> {
-    let ytdlp = resolve_ytdlp_path();
+    let current = resolve_ytdlp_path();
+    let ytdlp = if let Some(target) = update_target_path() {
+        if target != current && !target.is_file() {
+            if let Some(parent) = target.parent() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(EngineError::Io)?;
+            }
+            tokio::fs::copy(&current, &target)
+                .await
+                .map_err(EngineError::Io)?;
+        }
+        target
+    } else {
+        current
+    };
+    // Make downloads in this process use the freshly managed copy immediately.
+    if std::env::var("ODM_YTDLP_PATH").is_err() {
+        std::env::set_var("ODM_YTDLP_PATH", &ytdlp);
+    }
     let output = no_window_command(&ytdlp)
         .arg("-U")
         .output()
@@ -415,6 +552,19 @@ pub async fn download_with_ytdlp(
         "--ffmpeg-location".into(),
         ffmpeg_path_str,
     ];
+    if is_tiktok_url(url) {
+        args.extend([
+            "--extractor-args".into(),
+            "tiktok:api_hostname=api22-normal-c-useast2a.tiktokv.com".into(),
+        ]);
+    }
+    if url::Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| host == "bilivideo.com" || host.ends_with(".bilivideo.com"))
+    {
+        args.extend(["--referer".into(), "https://www.bilibili.com/".into()]);
+    }
     if let Some(quickjs_path) = resolve_quickjs_path() {
         args.push("--js-runtimes".into());
         args.push(format!("quickjs:{}", quickjs_path.display()));
@@ -494,8 +644,12 @@ pub async fn download_with_ytdlp(
         args.push("--cookies-from-browser".into());
         args.push(browser.clone());
     }
-    if opts.force_generic { args.push("--force-generic-extractor".into()); }
-    if let Some(referer) = &opts.referer { args.extend(["--referer".into(), referer.clone()]); }
+    if opts.force_generic {
+        args.push("--force-generic-extractor".into());
+    }
+    if let Some(referer) = &opts.referer {
+        args.extend(["--referer".into(), referer.clone()]);
+    }
     args.push(url.into());
 
     let mut child = no_window_command(&ytdlp)

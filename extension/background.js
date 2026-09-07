@@ -34,6 +34,9 @@ const KNOWN_VIDEO_HOSTS = [
   "twitch.tv",
   "soundcloud.com",
   "reddit.com",
+  "bilibili.com",
+  "b23.tv",
+  "bilivideo.com",
 ];
 
 function isKnownVideoHost(url) {
@@ -86,9 +89,12 @@ chrome.runtime.onInstalled.addListener(() => {
 // not just right-click "Download with ODM") to the ODM desktop app, taking
 // over the browser's own download manager. On by default; toggled from the
 // popup and persisted in chrome.storage.local.
-let autoCaptureEnabled = true;
-chrome.storage.local.get({ autoCapture: true }, (s) => {
-  autoCaptureEnabled = s.autoCapture;
+let autoCaptureEnabled = false;
+chrome.storage.local.get({ autoCapture: false }, (s) => {
+  // Older builds enabled this by default; migrate existing installs to the
+  // safer opt-in behavior so Chrome does not silently reroute every download.
+  autoCaptureEnabled = false;
+  if (s.autoCapture === true) chrome.storage.local.set({ autoCapture: false });
 });
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && "autoCapture" in changes) {
@@ -151,7 +157,7 @@ chrome.webRequest.onHeadersReceived.addListener(
       });
     }
 
-    const capturedCdnMedia = /\.(googlevideo\.com|fbcdn\.net|cdninstagram\.com|tiktok\.com|tiktokcdn\.com)$/.test(new URL(details.url).hostname) &&
+    const capturedCdnMedia = /\.(googlevideo\.com|fbcdn\.net|cdninstagram\.com|tiktok\.com|tiktokcdn\.com|bilivideo\.com)$/.test(new URL(details.url).hostname) &&
       (contentType.startsWith("video/") || contentType.startsWith("audio/"));
     if (isManifest || isLargeMedia || capturedCdnMedia) {
       recordDetection(details.tabId, { url: details.url, contentType, contentLength, capturedAt: Date.now(), frameId: details.frameId });
@@ -172,6 +178,11 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "connect") {
+    sendToNativeHost({ action: "ping" }).then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: `${error.message} Open ODM desktop app and retry.` }));
+    return true;
+  }
   if (message.type === "ping") {
     sendToNativeHost({ action: "ping" })
       .then(() => sendResponse({ ok: true }))
@@ -225,8 +236,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const pageUrl = message.pageUrl || sender.tab?.url;
     const quality = String(message.quality ?? message.selectedQuality ?? "best");
     if (pageUrl && isKnownVideoHost(pageUrl)) {
-      getDetections(tabId).then((entries) => sendToNativeHost({ action: "add_download", url: singleVideoUrl(pageUrl), quality,
-        fallback_url: message.mediaUrl, fallback_audio: matchingAudio(message.mediaUrl, entries, sender.frameId) }))
+      getDetections(tabId).then((entries) => {
+        // Bilibili often exposes a blob/empty currentSrc. Prefer the captured
+        // signed bilivideo stream when the player URL is unavailable, so a
+        // page download does not depend on the BiliBili page API (which may
+        // return HTTP 412 to yt-dlp).
+        const playerUrl = /^https?:\/\//i.test(message.mediaUrl || "") ? message.mediaUrl : "";
+        const detectedUrl = entries.length ? pickBestDetection(entries)?.url : "";
+        const fallbackUrl = playerUrl || (typeof detectedUrl === "string" && /^https?:\/\//i.test(detectedUrl) ? detectedUrl : "");
+        return sendToNativeHost({ action: "add_download", url: singleVideoUrl(pageUrl), quality,
+          fallback_url: fallbackUrl, fallback_audio: matchingAudio(fallbackUrl, entries, sender.frameId) });
+      })
         .then((res) => sendResponse({ ok: true, res }))
         .catch((err) => sendResponse({ ok: false, error: String(err?.message || err) }));
       return true;
@@ -404,7 +424,10 @@ async function localRequest(path, body, timeout) {
       credentials: "omit",
       redirect: "error",
     });
-    if (!response.ok) throw new Error(`ODM rejected the request (${response.status}).`);
+    if (!response.ok) {
+      const detail = (await response.text()).trim();
+      throw new Error(`ODM rejected the request (${response.status})${detail ? `: ${detail}` : ""}.`);
+    }
     return await response.json();
   } catch (error) {
     if (body !== undefined) {

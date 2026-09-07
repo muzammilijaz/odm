@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ODM - Open Download Manager",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Send videos, audio, and downloads to ODM -- a free, open-source manager with fast multi-connection downloading.",
   "author": "Muzammil Ijaz",
   "homepage_url": "https://github.com/muzammilijaz/odm",

@@ -966,7 +966,7 @@ function RightDetailsPanel({
 
 // Mirrors odm-engine's KNOWN_VIDEO_HOSTS -- UI hint only (which known-site
 // options to show); the backend is the authority on actual routing.
-const KNOWN_VIDEO_HOSTS = ["youtube.com", "youtu.be", "tiktok.com", "instagram.com", "facebook.com", "twitter.com", "x.com", "vimeo.com", "dailymotion.com", "twitch.tv", "soundcloud.com", "reddit.com"];
+const KNOWN_VIDEO_HOSTS = ["youtube.com", "youtu.be", "tiktok.com", "instagram.com", "facebook.com", "twitter.com", "x.com", "vimeo.com", "dailymotion.com", "twitch.tv", "soundcloud.com", "reddit.com", "bilibili.com", "b23.tv", "bilivideo.com"];
 
 function isKnownVideoUrl(url: string): boolean {
   try {
@@ -1656,6 +1656,7 @@ function App() {
   const [search, setSearch] = useState("");
   const [engineStatus, setEngineStatus] = useState<string | null>(null);
   const [updatingEngine, setUpdatingEngine] = useState(false);
+  const [extensionConnected, setExtensionConnected] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const tasksRef = useRef<Task[]>([]);
   const appVersion = useAppVersion();
@@ -1668,6 +1669,19 @@ function App() {
   }, [notifyPrefs]);
   const { prefs: dialogPrefs, setPref: setDialogPref, loaded: dialogPrefsLoaded } = useDialogPrefs();
   const dialogPrefsRef = useRef(dialogPrefs);
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const response = await fetch("http://127.0.0.1:38019/api/health", { cache: "no-store" });
+        const health = await response.json();
+        if (!cancelled) setExtensionConnected(response.ok && health.app === "com.odm.app" && health.protocol === 1);
+      } catch { if (!cancelled) setExtensionConnected(false); }
+    };
+    check();
+    const timer = window.setInterval(check, 5000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
   useEffect(() => {
     dialogPrefsRef.current = dialogPrefs;
   }, [dialogPrefs]);
@@ -1921,6 +1935,9 @@ function App() {
 
             <div className="spacer" />
             {engineStatus && <span className="engine-status">{engineStatus}</span>}
+            <span className={`extension-status ${extensionConnected ? "extension-status--connected" : "extension-status--offline"}`} title="ODM local browser connection">
+              <span className="extension-status__dot" /> {extensionConnected ? "Extension Connected" : "Extension Offline"}
+            </span>
             <button className="btn btn--chrome" onClick={() => openUrl(CHROME_EXTENSION_URL)} title="Install the official ODM browser extension">
               Add Chrome Extension
             </button>

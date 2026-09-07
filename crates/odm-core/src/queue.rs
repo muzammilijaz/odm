@@ -62,6 +62,22 @@ fn unique_download_hash(url: &str, video_quality: Option<u32>) -> String {
 }
 
 impl Db {
+    /// Returns an already-known task for the same source and quality when it
+    /// is still active or has completed. Browser extensions can emit the
+    /// same download more than once, so this prevents duplicate work.
+    pub async fn find_existing_download(&self, url: &str, video_quality: Option<u32>) -> Result<Option<Task>> {
+        let url = url.to_string();
+        self.with_conn(move |conn| {
+            conn.query_row(
+                "SELECT * FROM downloads WHERE url = ?1 AND video_quality IS ?2
+                 AND status IN ('queued','downloading','paused','completed')
+                 ORDER BY id DESC LIMIT 1",
+                rusqlite::params![url, video_quality.map(i64::from)],
+                row_to_task,
+            ).optional().map_err(Into::into)
+        }).await
+    }
+
     pub async fn set_playlist_group(&self, id: i64, group: &str, title: &str) -> Result<()> {
         let group = group.to_string();
         let title = title.to_string();

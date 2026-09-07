@@ -51,6 +51,17 @@ function setHostStatus(online) {
   hostStatusEl.querySelector(".text").textContent = online ? "Connected" : "App offline";
 }
 
+async function connectHost() {
+  const button = document.getElementById("connect-button");
+  button.disabled = true;
+  button.textContent = "...";
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "connect" });
+    setHostStatus(!!response?.ok);
+    setStatus(response?.ok ? "ODM connected." : (response?.error || "Open ODM desktop app, then retry."), response?.ok ? "ok" : "error");
+  } finally { button.disabled = false; button.textContent = "Connect"; }
+}
+
 async function checkHostStatus() {
   try {
   const response = await chrome.runtime.sendMessage({ type: "ping" });
@@ -104,9 +115,14 @@ formEl.addEventListener("submit", async (e) => {
 });
 
 const autoCaptureEl = document.getElementById("auto-capture");
-chrome.storage.local.get({ autoCapture: true }, (s) => {
+chrome.storage.local.get({ autoCapture: false }, (s) => {
+  // Existing development builds defaulted this to true. Keep the safer
+  // default for upgraded installs too; users can explicitly re-enable it.
+  if (s.autoCapture === true) chrome.storage.local.set({ autoCapture: false });
+  s.autoCapture = false;
   autoCaptureEl.checked = s.autoCapture;
 });
+document.getElementById("connect-button").addEventListener("click", connectHost);
 
 chrome.storage.local.get({ videoQuality: "default" }, (s) => {
   qualityEl.value = s.videoQuality;

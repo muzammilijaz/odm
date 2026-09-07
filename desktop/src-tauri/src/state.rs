@@ -24,9 +24,8 @@ pub fn app_data_dir() -> PathBuf {
     PathBuf::from(".odm-data")
 }
 
-/// Points odm-engine's ffmpeg/yt-dlp resolution (which checks
-/// `ODM_FFMPEG_PATH`/`ODM_YTDLP_PATH` first) at the bundled binaries, so
-/// neither needs to be separately installed by the user. Binary names follow
+/// Points odm-engine's ffmpeg resolution at bundled binaries and gives yt-dlp
+/// a user-writable managed path for self-updates. Binary names follow
 /// Tauri's sidecar convention (`<name>-<target-triple>.exe`).
 ///
 /// In a packaged (installed) build, these live under the app's resource
@@ -54,9 +53,15 @@ pub fn set_bundled_binary_env_vars(app: &AppHandle) {
         std::env::set_var("ODM_FFPROBE_PATH", &ffprobe);
     }
 
-    let ytdlp = binaries_dir.join(format!("yt-dlp-{TRIPLE}.exe"));
-    if ytdlp.exists() {
-        std::env::set_var("ODM_YTDLP_PATH", &ytdlp);
+    // Never force yt-dlp to the install directory: Program Files and custom
+    // protected folders are commonly read-only after installation. The
+    // engine prefers this managed copy when present and creates it on the
+    // first in-app update.
+    let managed_ytdlp = app_data_dir().join("binaries").join("yt-dlp.exe");
+    std::env::set_var("ODM_YTDLP_USER_PATH", &managed_ytdlp);
+    let bundled_ytdlp = binaries_dir.join(format!("yt-dlp-{TRIPLE}.exe"));
+    if bundled_ytdlp.is_file() {
+        std::env::set_var("ODM_YTDLP_BUNDLED_PATH", &bundled_ytdlp);
     }
 
     // Gives yt-dlp a JS runtime for sites that need one to solve extraction
