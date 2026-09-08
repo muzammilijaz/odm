@@ -290,18 +290,20 @@ impl TaskManager {
         Ok(first)
     }
 
-    pub async fn recover_playlist_queue(&self) -> Result<()> {
-        let mut groups: HashMap<String, Vec<i64>> = HashMap::new();
+    /// Do not silently restart work left in the persisted queue. A queued or
+    /// downloading row found while constructing a fresh manager belongs to a
+    /// previous app session, so make it explicitly resumable by the user.
+    ///
+    /// This is especially important for playlists: automatically scheduling
+    /// every remaining entry at Windows login used to create a stream of
+    /// downloads (and failure notifications for expired URLs) without a new
+    /// user action.
+    pub async fn pause_interrupted_tasks(&self) -> Result<()> {
         for task in self.db.list_tasks().await? {
-            if let Some(group) = task.playlist_group {
-                if matches!(task.status, TaskStatus::Queued | TaskStatus::Downloading) {
-                    self.db.set_status(task.id, TaskStatus::Queued).await?;
-                    groups.entry(group).or_default().push(task.id);
-                }
+            if matches!(task.status, TaskStatus::Queued | TaskStatus::Downloading) {
+                self.db.set_status(task.id, TaskStatus::Paused).await?;
             }
         }
-        let concurrency = self.db.get_setting("playlist_concurrent").await?.and_then(|v| v.parse::<usize>().ok()).unwrap_or(1).clamp(1,4);
-        for (_, mut ids) in groups { ids.sort_unstable(); self.schedule_playlist(ids, concurrency); }
         Ok(())
     }
 
@@ -866,6 +868,25 @@ mod relay_tests {
         manager.run_task(task.id).await.unwrap();
         assert_eq!(db.get_task(task.id).await.unwrap().unwrap().status, TaskStatus::Cancelled);
         assert!(!dest.exists());
+    }
+
+    #[tokio::test]
+    async fn startup_pauses_interrupted_tasks_instead_of_restarting_them() {
+        let db = Db::open_in_memory().await.unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let manager = TaskManager::new(db.clone(), DownloadConfig::default(), root.path(), 1);
+
+        let queued = db.enqueue("https://example.test/queued.bin", &root.path().join("queued.bin").to_string_lossy(), None, false, None).await.unwrap();
+        let downloading = db.enqueue("https://example.test/downloading.bin", &root.path().join("downloading.bin").to_string_lossy(), None, false, None).await.unwrap();
+        let completed = db.enqueue("https://example.test/completed.bin", &root.path().join("completed.bin").to_string_lossy(), None, false, None).await.unwrap();
+        db.set_status(downloading.id, TaskStatus::Downloading).await.unwrap();
+        db.set_status(completed.id, TaskStatus::Completed).await.unwrap();
+
+        manager.pause_interrupted_tasks().await.unwrap();
+
+        assert_eq!(db.get_task(queued.id).await.unwrap().unwrap().status, TaskStatus::Paused);
+        assert_eq!(db.get_task(downloading.id).await.unwrap().unwrap().status, TaskStatus::Paused);
+        assert_eq!(db.get_task(completed.id).await.unwrap().unwrap().status, TaskStatus::Completed);
     }
 
     #[tokio::test]

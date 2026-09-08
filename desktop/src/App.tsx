@@ -1659,6 +1659,7 @@ function App() {
   const [extensionConnected, setExtensionConnected] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const tasksRef = useRef<Task[]>([]);
+  const tasksInitializedRef = useRef(false);
   const appVersion = useAppVersion();
   const { update: availableUpdate, dismiss: dismissUpdate } = useUpdateCheck(appVersion);
   const [theme, toggleTheme] = useTheme();
@@ -1732,11 +1733,22 @@ function App() {
       .then((t) => {
         tasksRef.current = t;
         setTasks(t);
+        tasksInitializedRef.current = true;
       })
       .catch(() => {});
     refreshCategories().catch(() => {});
 
     const unlisten = listen<Task[]>("downloads-updated", (event) => {
+      // The first payload is a snapshot of persisted history, not a set of
+      // fresh transitions. Depending on startup timing it can arrive before
+      // listDownloads(), so establish the baseline without firing "started"
+      // notifications for work left over from a previous session.
+      if (!tasksInitializedRef.current) {
+        tasksRef.current = event.payload;
+        setTasks(event.payload);
+        tasksInitializedRef.current = true;
+        return;
+      }
       const previousById = new Map(tasksRef.current.map((t) => [t.id, t]));
       for (const task of event.payload) {
         const before = previousById.get(task.id);

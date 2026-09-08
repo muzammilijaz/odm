@@ -118,8 +118,8 @@ pub fn run() {
                 let config = odm_core::DownloadConfig::default();
                 let manager =
                     odm_core::TaskManager::new(db, config, state::default_downloads_root(), 4);
-                if let Err(error) = manager.recover_playlist_queue().await {
-                    eprintln!("Could not recover playlist queue: {error}");
+                if let Err(error) = manager.pause_interrupted_tasks().await {
+                    eprintln!("Could not pause interrupted downloads: {error}");
                 }
 
                 app_handle.manage(state::AppState {

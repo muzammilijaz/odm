@@ -177,7 +177,7 @@ async fn concurrency_limit_is_respected() {
 }
 
 #[tokio::test]
-async fn repeated_direct_downloads_get_unique_filenames() {
+async fn repeated_direct_download_requests_reuse_the_existing_task() {
     let base = spawn_server().await;
     let db = Db::open_in_memory().await.unwrap();
     let dir = tempdir().unwrap();
@@ -201,7 +201,7 @@ async fn repeated_direct_downloads_get_unique_filenames() {
     )
     .await;
 
-    assert_ne!(first.id, second.id);
+    assert_eq!(first.id, second.id);
     assert!(dir.path().join("Programs").join("muzammil.exe").exists());
-    assert!(dir.path().join("Programs").join("muzammil-1.exe").exists());
+    assert!(!dir.path().join("Programs").join("muzammil-1.exe").exists());
 }
