@@ -59,6 +59,36 @@
     return `${height}p`;
   }
 
+  function mediaPermalink(value) {
+    try {
+      const url = new URL(value, location.href);
+      const host = url.hostname.toLowerCase();
+      if ((host === "instagram.com" || host.endsWith(".instagram.com")) &&
+          /^\/(?:p|reel|tv)\/[^/?#]+\/?$/i.test(url.pathname)) return url.href;
+      if ((host === "tiktok.com" || host.endsWith(".tiktok.com")) &&
+          (/^\/@[^/]+\/video\/\d+\/?$/i.test(url.pathname) || /^\/(?:t|embed(?:\/v2)?)\/[^/?#]+\/?$/i.test(url.pathname))) return url.href;
+    } catch {}
+    return "";
+  }
+
+  // Reels/posts opened over a profile or feed do not always update
+  // location.href. Prefer the permalink belonging to the video's own card;
+  // the background worker will fall back to the captured media stream when
+  // no concrete permalink is available.
+  function currentVideoPageUrl() {
+    const current = mediaPermalink(location.href);
+    if (current) return current;
+    const directAnchor = currentVideo?.closest?.("a[href]");
+    const direct = mediaPermalink(directAnchor?.href || directAnchor?.getAttribute?.("href"));
+    if (direct) return direct;
+    const container = currentVideo?.closest?.("article, [data-e2e*='feed'], [data-e2e*='video']");
+    for (const anchor of container?.querySelectorAll?.("a[href]") || []) {
+      const candidate = mediaPermalink(anchor.href || anchor.getAttribute?.("href"));
+      if (candidate) return candidate;
+    }
+    return location.href;
+  }
+
   // YouTube (and similarly, sites with hover-preview thumbnails) autoplay a
   // muted preview <video> inside home/search feed thumbnails on mouseover --
   // that used to get picked up as "the" video and put a download badge on
@@ -130,9 +160,10 @@
     positionQualityMenu();
 
     const generation = ++probeGeneration;
-    const pageUrl = location.href;
+    const pageLocation = location.href;
+    const pageUrl = currentVideoPageUrl();
     const finish = (response) => {
-      if (generation !== probeGeneration || pageUrl !== location.href || !qualityMenu?.classList.contains("odm-quality-menu--open")) return;
+      if (generation !== probeGeneration || pageLocation !== location.href || !qualityMenu?.classList.contains("odm-quality-menu--open")) return;
       clearTimeout(probeTimer);
       ++probeGeneration;
       const probed = Array.isArray(response?.heights) ? response.heights.filter((h) => Number.isInteger(h) && h > 0) : [];
@@ -183,7 +214,7 @@
     // The desktop automatically tries this player's stream if extraction
     // fails. Never substitute an arbitrary feed preload from the tab.
     const mediaUrl = currentVideo?.currentSrc || currentVideo?.src || "";
-    sendToBackground({ type: "downloadDetectedVideo", pageUrl: location.href, quality, selectedQuality: quality, mediaUrl }, (response) => {
+    sendToBackground({ type: "downloadDetectedVideo", pageUrl: currentVideoPageUrl(), quality, selectedQuality: quality, mediaUrl }, (response) => {
       downloadPending = false;
       if (response?.ok) {
         const acceptedQuality = response?.res?.task?.video_quality;

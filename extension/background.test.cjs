@@ -47,6 +47,30 @@ test('passes captured signed URL unchanged alongside the page and selected quali
   assert.equal(w.sent().url, 'https://www.facebook.com/reel/123');
 });
 
+test('Instagram profile/feed pages are not probed as single videos', async () => {
+  let probes = 0;
+  const w = worker([], message => {
+    if (message.action === 'probe_video') probes++;
+    return { ok: true, qualities: { heights: [1080] } };
+  });
+  const reply = await w.request({ type: 'getVideoQualities', pageUrl: 'https://www.instagram.com/example/?hl=en' });
+  assert.equal(reply.ok, true);
+  assert.equal(reply.heights.length, 0);
+  assert.equal(probes, 0);
+});
+
+test('TikTok feed pages are not probed as single videos', async () => {
+  let probes = 0;
+  const w = worker([], message => {
+    if (message.action === 'probe_video') probes++;
+    return { ok: true, qualities: { heights: [1080] } };
+  });
+  const reply = await w.request({ type: 'getVideoQualities', pageUrl: 'https://www.tiktok.com/?lang=en' });
+  assert.equal(reply.ok, true);
+  assert.equal(reply.heights.length, 0);
+  assert.equal(probes, 0);
+});
+
 test('empty and malformed native replies are rejected for download and connection checks', async () => {
   for (const reply of [undefined, null, {}, {ok:'true'}, {ok:false,error:'Rejected'}]) {
     const w = worker([], () => reply);

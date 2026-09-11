@@ -1,4 +1,4 @@
-ODM 1.1.2 browser extension setup
+ODM 1.1.3 browser extension setup
 
 Chrome Web Store package: odm-extension.zip
 Local package: odm-extension.crx

@@ -48,6 +48,27 @@ function isKnownVideoHost(url) {
   }
 }
 
+// Instagram and TikTok render playable videos on profile/search/feed pages,
+// but those page URLs are not single-video inputs. Passing one to yt-dlp
+// selects a user/feed extractor (for example `[instagram:user]`) and makes a
+// quality probe fail even though the video currently in the player is valid.
+function isConcreteVideoPage(url) {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (host === "instagram.com" || host.endsWith(".instagram.com")) {
+      return /^\/(?:p|reel|tv)\/[^/?#]+\/?$/i.test(parsed.pathname);
+    }
+    if (host === "tiktok.com" || host.endsWith(".tiktok.com")) {
+      return /^\/@[^/]+\/video\/\d+\/?$/i.test(parsed.pathname) ||
+        /^\/(?:t|embed(?:\/v2)?)\/[^/?#]+\/?$/i.test(parsed.pathname);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const STREAM_CONTENT_TYPES = [
   "video/",
   "audio/",
@@ -201,7 +222,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === "getVideoQualities") {
     const pageUrl = message.pageUrl || sender.tab?.url;
-    if (!pageUrl || !isKnownVideoHost(pageUrl)) {
+    if (!pageUrl || !isKnownVideoHost(pageUrl) || !isConcreteVideoPage(pageUrl)) {
       sendResponse({ ok: true, heights: [] });
       return false;
     }

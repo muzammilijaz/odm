@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 
 // Run the real content script, including menu and download click handlers.
-function page(chrome) {
+function page(chrome, overrides = {}) {
   const elements = [];
   function element() {
     const el = {
@@ -26,10 +26,11 @@ function page(chrome) {
     elements.push(el);
     return el;
   }
-  const video = Object.assign(element(), { isConnected: true, currentSrc: 'https://video.fbcdn.net/test.mp4' });
+  const video = Object.assign(element(), { isConnected: true, currentSrc: 'https://video.fbcdn.net/test.mp4' }, overrides.video);
   const context = {
     chrome, console: { log() {}, warn() {}, error() {} },
-    location: { href: 'https://www.facebook.com/reel/123', hostname: 'www.facebook.com', pathname: '/reel/123' },
+    URL,
+    location: overrides.location || { href: 'https://www.facebook.com/reel/123', hostname: 'www.facebook.com', pathname: '/reel/123' },
     innerWidth: 1000, innerHeight: 800,
     document: { querySelectorAll: () => [video], createElement: element, documentElement: element(), addEventListener() {} },
     requestAnimationFrame() { return 1; }, cancelAnimationFrame() {},
@@ -107,6 +108,21 @@ test('working messaging preserves selected resolution and captured URL', () => {
   assert.equal(sent.quality, '1080');
   assert.equal(sent.mediaUrl, 'https://video.fbcdn.net/test.mp4');
   assert.match(p.badge().label.textContent, /1080p/);
+});
+
+test('Instagram profile overlay sends the reel permalink from the video card', () => {
+  let download;
+  const reel = { href: 'https://www.instagram.com/reel/ABC123/?hl=en' };
+  const p = page({ runtime: { id: 'odm', sendMessage(message, cb) {
+    if (message.type === 'getVideoQualities') cb({ ok: true, heights: [] });
+    else { download = message; cb({ ok: true }); }
+  } } }, {
+    location: { href: 'https://www.instagram.com/example/?hl=en', hostname: 'www.instagram.com', pathname: '/example/' },
+    video: { closest(selector) { return selector === 'a[href]' ? reel : null; } },
+  });
+  p.badge().click();
+  p.download();
+  assert.equal(download.pageUrl, reel.href);
 });
 
 test('Best available sends the player fallback automatically without backup options', () => {
