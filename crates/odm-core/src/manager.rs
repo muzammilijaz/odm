@@ -185,7 +185,13 @@ impl TaskManager {
                 let url = url.to_string();
                 let id = task.id;
                 let preferred_height = video_quality;
+                let client = self.client.clone();
                 tokio::spawn(async move {
+                    if let Some((title, thumbnail)) =
+                        youtube_metadata_fallback(&client, &url).await
+                    {
+                        let _ = db.set_metadata(id, &title, thumbnail.as_deref()).await;
+                    }
                     if let Ok(Ok(info)) = tokio::time::timeout(
                         std::time::Duration::from_secs(15),
                         odm_engine::probe_video_qualities(&url),
@@ -849,6 +855,47 @@ impl TaskManager {
     pub async fn clear_cookies_file(&self) -> Result<()> {
         self.db.clear_setting(crate::settings::COOKIES_FILE).await
     }
+}
+
+/// YouTube's oEmbed endpoint and stable thumbnail URL are much faster and
+/// more reliable than waiting for a full yt-dlp format probe. Use them to
+/// populate the row immediately while yt-dlp resolves formats in parallel.
+async fn youtube_metadata_fallback(
+    client: &reqwest::Client,
+    url: &str,
+) -> Option<(String, Option<String>)> {
+    let parsed = url::Url::parse(url).ok()?;
+    let host = parsed.host_str()?.to_ascii_lowercase();
+    let video_id = if host == "youtu.be" || host.ends_with(".youtu.be") {
+        parsed.path_segments()?.next()?.to_string()
+    } else if host == "youtube.com" || host.ends_with(".youtube.com") {
+        parsed.query_pairs().find_map(|(key, value)| {
+            (key == "v" && !value.is_empty()).then(|| value.into_owned())
+        })?
+    } else {
+        return None;
+    };
+    let thumbnail = format!("https://i.ytimg.com/vi/{video_id}/hqdefault.jpg");
+    let fallback_title = format!("YouTube video ({video_id})");
+    let endpoint = format!(
+        "https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D{video_id}&format=json"
+    );
+    let title = match client
+        .get(endpoint)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+    {
+        Ok(response) => response
+            .text()
+            .await
+            .ok()
+            .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
+            .and_then(|json| json.get("title").and_then(|v| v.as_str()).map(str::to_string))
+            .unwrap_or(fallback_title),
+        Err(_) => fallback_title,
+    };
+    Some((title, Some(thumbnail)))
 }
 
 fn is_playlist_url(url: &str) -> bool {

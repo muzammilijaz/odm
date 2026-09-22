@@ -598,7 +598,15 @@ function StatusPill({ task }: { task: TaskWithSpeed }) {
             <div className={`progress__bar progress__bar--${task.status.toLowerCase()}`} style={{ width: `${pct ?? 0}%` }} />
           )}
         </div>
-        <span className="status-progress__pct">{pct === null ? (indeterminate ? "…" : "—") : `${pct}%`}</span>
+        <span className="status-progress__pct">
+          {pct === null
+            ? task.downloaded_bytes > 0
+              ? formatBytes(task.downloaded_bytes)
+              : indeterminate
+                ? "Preparing…"
+                : "—"
+            : `${pct}%`}
+        </span>
       </div>
       <span className={task.status === "Paused" ? "status-progress__caption status-progress__caption--paused" : "status-progress__caption"}>
         {task.status}
