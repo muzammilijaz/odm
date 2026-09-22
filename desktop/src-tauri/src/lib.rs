@@ -1,6 +1,6 @@
 mod commands;
 mod http_api;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 mod native_messaging;
 mod state;
 
@@ -106,7 +106,7 @@ pub fn run() {
 
             let app_handle = app.handle().clone();
             state::set_bundled_binary_env_vars(&app_handle);
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             if let Err(error) = native_messaging::register(&app_handle) {
                 eprintln!("ODM could not register its browser native messaging host: {error}");
             }

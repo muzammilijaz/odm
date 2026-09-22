@@ -4,11 +4,16 @@
   "version": "1.1.2",
   "type": "module",
   "scripts": {
-    "predev": "powershell -NoProfile -ExecutionPolicy Bypass -File prepare-native-host.ps1",
+    "predev": "node prepare-native-host.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:build:mac": "tauri build --bundles dmg",
+    "tauri:build:mac:universal": "tauri build --target universal-apple-darwin --bundles dmg",
+    "tauri:build:windows": "tauri build --config src-tauri/tauri.windows.conf.json --bundles nsis"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

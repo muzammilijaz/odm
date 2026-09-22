@@ -1,6 +1,6 @@
 # ODM — Open Download Manager
 
-A free, open-source desktop download manager for Windows, built with
+A free, open-source desktop download manager for Windows and macOS, built with
 Rust + Tauri + React. AGPL-3.0 licensed: free to use, free to modify, and any
 distributed or hosted fork must stay open too.
 
@@ -39,6 +39,11 @@ Developer mode, ZIP extraction, or **Load unpacked** steps are required.
 ## Installation
 
 ### 1. Install the desktop app
+
+On Windows, download the `-setup.exe` installer. On macOS, download the
+`.dmg`; the universal macOS build runs natively on both Intel and Apple
+Silicon (M1/M2/M3). The browser integration is registered automatically on
+both platforms when ODM starts.
 
 1. Download the latest `ODM_x.x.x_x64-setup.exe` from the
    [Releases](https://github.com/muzammilijaz/odm/releases) page.
@@ -84,8 +89,19 @@ extension separately from `chrome://extensions`.
 
 ```sh
 cargo build --workspace
-cd desktop && npm install && npm run tauri dev
+cd desktop && npm install && npm run tauri:dev
 ```
+
+On an Intel Mac, install both Rust targets once and build the universal DMG:
+
+```sh
+rustup target add x86_64-apple-darwin aarch64-apple-darwin
+cd desktop && npm run tauri:build:mac:universal
+```
+
+Third-party `ffmpeg`, `ffprobe`, `yt-dlp`, and optional `quickjs` binaries are
+platform-specific. Put the matching files in `desktop/src-tauri/binaries/`
+using the names documented there before creating a production bundle.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full dev setup, including how
 to build and load the browser extension.

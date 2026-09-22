@@ -7,6 +7,7 @@
 use serde_json::json;
 use std::{fs, io, path::PathBuf};
 use tauri::{path::BaseDirectory, AppHandle, Manager};
+#[cfg(windows)]
 use winreg::{
     enums::{HKEY_CURRENT_USER, KEY_WOW64_32KEY, KEY_WOW64_64KEY, KEY_WRITE},
     RegKey,
@@ -32,15 +33,28 @@ pub fn register(app: &AppHandle) -> io::Result<PathBuf> {
     let bytes = serde_json::to_vec_pretty(&manifest).map_err(io::Error::other)?;
     fs::write(&manifest_path, bytes)?;
 
+    #[cfg(windows)]
     let manifest_value = manifest_path.to_string_lossy().into_owned();
+    #[cfg(windows)]
     let registry_path = format!(r"Software\Google\Chrome\NativeMessagingHosts\{HOST_NAME}");
+    #[cfg(windows)]
     let edge_registry_path = format!(r"Software\Microsoft\Edge\NativeMessagingHosts\{HOST_NAME}");
+    #[cfg(windows)]
     for view in [KEY_WOW64_32KEY, KEY_WOW64_64KEY] {
         let current_user = RegKey::predef(HKEY_CURRENT_USER);
         for path in [&registry_path, &edge_registry_path] {
             let (key, _) = current_user.create_subkey_with_flags(path, KEY_WRITE | view)?;
             key.set_value("", &manifest_value)?;
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    for browser_dir in [
+        dirs::home_dir().map(|p| p.join("Library/Application Support/Google/Chrome/NativeMessagingHosts")),
+        dirs::home_dir().map(|p| p.join("Library/Application Support/Microsoft Edge/NativeMessagingHosts")),
+    ].into_iter().flatten() {
+        fs::create_dir_all(&browser_dir)?;
+        fs::copy(&manifest_path, browser_dir.join(format!("{HOST_NAME}.json")))?;
     }
 
     Ok(manifest_path)
@@ -54,7 +68,7 @@ fn find_host_executable(app: &AppHandle) -> io::Result<PathBuf> {
     // override the freshly built development host.
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(parent) = current_exe.parent() {
-            candidates.push(parent.join("odm-native-host.exe"));
+            candidates.push(parent.join(if cfg!(windows) { "odm-native-host.exe" } else { "odm-native-host" }));
         }
     }
 
@@ -63,13 +77,13 @@ fn find_host_executable(app: &AppHandle) -> io::Result<PathBuf> {
     // custom bundle mapping.
     if let Ok(path) = app
         .path()
-        .resolve("resources/odm-native-host.exe", BaseDirectory::Resource)
+        .resolve(format!("resources/odm-native-host{}", if cfg!(windows) { ".exe" } else { "" }), BaseDirectory::Resource)
     {
         candidates.push(path);
     }
     if let Ok(path) = app
         .path()
-        .resolve("odm-native-host.exe", BaseDirectory::Resource)
+        .resolve(format!("odm-native-host{}", if cfg!(windows) { ".exe" } else { "" }), BaseDirectory::Resource)
     {
         candidates.push(path);
     }
@@ -77,5 +91,5 @@ fn find_host_executable(app: &AppHandle) -> io::Result<PathBuf> {
     candidates
         .into_iter()
         .find(|candidate| candidate.is_file())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "odm-native-host.exe was not found"))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "odm-native-host was not found"))
 }

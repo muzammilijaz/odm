@@ -9,7 +9,7 @@
 // Chrome launches this as a child process and talks to it purely over
 // stdio -- there's no console I/O to show, so suppress the console window
 // Windows would otherwise flash open for a plain console-subsystem exe.
-#![windows_subsystem = "windows"]
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 use serde_json::{json, Value};
 use std::io::{self, Read, Write};

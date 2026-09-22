@@ -81,14 +81,26 @@ pub async fn rename_download(
         .map_err(|e| e.to_string())
 }
 
-/// Opens Windows' native "Open with" picker for a file -- there's no
-/// dedicated API for this, but `rundll32 shell32.dll,OpenAs_RunDLL <path>`
-/// is the standard trick every download manager (and Explorer itself) uses
-/// under the hood.
+/// Opens the platform-native "Open with" picker for a file.
 #[tauri::command]
 pub async fn open_with_dialog(path: String) -> CmdResult<()> {
-    tokio::process::Command::new("rundll32")
-        .args(["shell32.dll,OpenAs_RunDLL", &path])
+    #[cfg(windows)]
+    let mut command = {
+        let mut command = tokio::process::Command::new("rundll32");
+        command.args(["shell32.dll,OpenAs_RunDLL", &path]);
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = tokio::process::Command::new("open");
+        command.arg(&path);
+        command
+    };
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    let mut command = tokio::process::Command::new("xdg-open");
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    command.arg(&path);
+    command
         .spawn()
         .map_err(|e| e.to_string())?;
     Ok(())

@@ -8,7 +8,7 @@
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
     "beforeBundleCommand": {
-      "script": "powershell -ExecutionPolicy Bypass -File stage-extension.ps1",
+      "script": "node ../stage-extension.mjs",
       "cwd": "."
     },
     "frontendDist": "../dist"
@@ -30,7 +30,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": ["dmg"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -40,16 +40,7 @@
     ],
     "resources": [
       "binaries/*",
-      "resources/vc_redist.x64.exe",
-      "resources/extension/**/*",
-      "resources/odm-native-host.exe",
-      "resources/com.odm.nativehost.template.json",
-      "resources/register-native-host.ps1"
-    ],
-    "windows": {
-      "nsis": {
-        "installerHooks": "windows/hooks.nsh"
-      }
-    }
+      "resources/**/*"
+    ]
   }
 }
