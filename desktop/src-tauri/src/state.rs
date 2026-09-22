@@ -35,14 +35,20 @@ pub fn app_data_dir() -> PathBuf {
 /// directory doesn't exist yet, so fall back to reading straight out of
 /// `src-tauri/binaries/` via `CARGO_MANIFEST_DIR`.
 pub fn set_bundled_binary_env_vars(app: &AppHandle) {
+    let triple = current_target_triple();
+    let suffix = if cfg!(windows) { ".exe" } else { "" };
     let binaries_dir = app
         .path()
         .resolve("binaries", BaseDirectory::Resource)
         .ok()
-        .filter(|p| p.exists())
+        // Tauri creates an empty target/debug/binaries directory in dev.
+        // Only prefer it when it actually contains a target binary; otherwise
+        // use the checked-out src-tauri/binaries directory.
+        .filter(|p| {
+            p.join(format!("yt-dlp-{triple}{suffix}")).is_file()
+                || p.join(format!("ffmpeg-{triple}{suffix}")).is_file()
+        })
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries"));
-    let triple = current_target_triple();
-    let suffix = if cfg!(windows) { ".exe" } else { "" };
 
     let ffmpeg = binaries_dir.join(format!("ffmpeg-{triple}{suffix}"));
     if ffmpeg.exists() {
@@ -72,6 +78,14 @@ pub fn set_bundled_binary_env_vars(app: &AppHandle) {
     if quickjs.exists() {
         std::env::set_var("ODM_QUICKJS_PATH", &quickjs);
     }
+
+    eprintln!(
+        "ODM dev binaries: dir={}, yt-dlp={}, ffmpeg={}, ffprobe={}",
+        binaries_dir.display(),
+        std::env::var("ODM_YTDLP_BUNDLED_PATH").unwrap_or_else(|_| "PATH".into()),
+        std::env::var("ODM_FFMPEG_PATH").unwrap_or_else(|_| "PATH".into()),
+        std::env::var("ODM_FFPROBE_PATH").unwrap_or_else(|_| "PATH".into()),
+    );
 }
 
 fn current_target_triple() -> &'static str {

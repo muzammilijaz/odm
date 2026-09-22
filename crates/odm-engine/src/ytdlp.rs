@@ -173,6 +173,21 @@ pub fn resolve_quickjs_path() -> Option<PathBuf> {
     bundled.exists().then_some(bundled)
 }
 
+/// Returns a yt-dlp JavaScript runtime argument. QuickJS is preferred when a
+/// bundled copy exists; macOS dev machines commonly already have Node.js,
+/// which yt-dlp can use for YouTube's current EJS challenge.
+fn resolve_js_runtime_arg() -> Option<String> {
+    if let Some(path) = resolve_quickjs_path() {
+        return Some(format!("quickjs:{}", path.display()));
+    }
+    std::process::Command::new("node")
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|_| "node:node".to_string())
+}
+
 /// Fetches yt-dlp's metadata/format-list JSON for `url` (`yt-dlp -J`), for a
 /// future quality-picker UI. Doesn't download anything.
 pub async fn probe_formats(url: &str) -> Result<serde_json::Value> {
@@ -239,11 +254,8 @@ async fn probe_formats_with_cookies(
     } else if let Some(browser) = cookies_browser {
         command.args(["--cookies-from-browser", browser]);
     }
-    if let Some(quickjs_path) = resolve_quickjs_path() {
-        command.args([
-            "--js-runtimes",
-            &format!("quickjs:{}", quickjs_path.display()),
-        ]);
+    if let Some(runtime) = resolve_js_runtime_arg() {
+        command.args(["--js-runtimes", &runtime]);
     }
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(20),
@@ -565,9 +577,9 @@ pub async fn download_with_ytdlp(
     {
         args.extend(["--referer".into(), "https://www.bilibili.com/".into()]);
     }
-    if let Some(quickjs_path) = resolve_quickjs_path() {
+    if let Some(runtime) = resolve_js_runtime_arg() {
         args.push("--js-runtimes".into());
-        args.push(format!("quickjs:{}", quickjs_path.display()));
+        args.push(runtime);
     }
     args.extend([
         "--newline".into(),
@@ -681,7 +693,12 @@ pub async fn download_with_ytdlp(
         // and leaving yt-dlp/ffmpeg running orphaned in the background.
         .kill_on_drop(true)
         .spawn()
-        .map_err(EngineError::Io)?;
+        .map_err(|error| {
+            EngineError::Io(std::io::Error::new(
+                error.kind(),
+                format!("could not start yt-dlp at '{}': {error}", ytdlp.display()),
+            ))
+        })?;
 
     let stdout = child.stdout.take().expect("stdout was piped");
     let stderr = child.stderr.take().expect("stderr was piped");
