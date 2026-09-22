@@ -19,3 +19,16 @@ Download and place these files here (Windows x86_64 shown; adjust the
 All file names must match Tauri's sidecar convention
 (`<name>-<target-triple>.exe`) exactly, since the same files double as the
 `externalBin` sources for a packaged installer.
+
+## macOS binaries
+
+Use the `x86_64-apple-darwin` names on Intel Macs and
+`aarch64-apple-darwin` on Apple Silicon. The official `yt-dlp_macos` release
+is universal and can be copied under both names. FFmpeg and FFprobe must be
+native to the target architecture:
+
+| File | Purpose |
+|---|---|
+| `yt-dlp-x86_64-apple-darwin` / `yt-dlp-aarch64-apple-darwin` | Official `yt-dlp_macos` standalone executable. |
+| `ffmpeg-x86_64-apple-darwin` / `ffmpeg-aarch64-apple-darwin` | Matching macOS FFmpeg executable. |
+| `ffprobe-x86_64-apple-darwin` / `ffprobe-aarch64-apple-darwin` | Matching macOS FFprobe executable. |

@@ -246,7 +246,13 @@ async fn probe_formats_with_cookies(
     let ytdlp = resolve_ytdlp_path();
     let mut command = no_window_command(&ytdlp);
     command.kill_on_drop(true);
-    command.args(["--socket-timeout", "10", "--retries", "1"]);
+    command.args([
+        "--ignore-config",
+        "--socket-timeout",
+        "10",
+        "--retries",
+        "1",
+    ]);
     add_tiktok_extractor_args(&mut command, url);
     add_bilibili_referer(&mut command, url);
     if let Some(path) = cookies_file {
@@ -548,6 +554,7 @@ pub async fn download_with_ytdlp(
     let ffmpeg_path_str = ffmpeg_path.display().to_string();
 
     let mut args: Vec<String> = vec![
+        "--ignore-config".into(),
         "-o".into(),
         output_template_str,
         "--print".into(),

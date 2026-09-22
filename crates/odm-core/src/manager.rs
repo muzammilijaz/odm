@@ -490,9 +490,18 @@ impl TaskManager {
             std::time::Duration::from_secs(20),
             odm_engine::probe_video_qualities_with_cookies(url, cookies_file.as_deref(), cookies_from_browser.as_deref()),
         )
-        .await
-        .ok()
-        .and_then(std::result::Result::ok);
+            .await
+            .ok()
+            .and_then(std::result::Result::ok);
+        if let Some(info) = &probed {
+            // Surface metadata as soon as the extractor has it. Previously
+            // title/thumbnail stayed blank until the entire media download
+            // completed, making a healthy macOS download look stuck.
+            self.db
+                .set_metadata(id, &info.title, info.thumbnail.as_deref())
+                .await
+                .ok();
+        }
         let resolved_quality = match &probed {
             Some(info) => odm_engine::select_available_height(video_quality, &info.heights),
             None => video_quality,
